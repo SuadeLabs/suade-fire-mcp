@@ -1,0 +1,23 @@
+# Fly.io app config for the one convenience public instance of fire-mcp.
+# This is NOT required to use this project -- anyone can run the published image
+# (ghcr.io/suadelabs/suade-fire-mcp) anywhere. This file only configures the one hosted
+# copy under the SuadeLabs org.
+#
+# FIRE_MCP_ALLOWED_HOSTS / FIRE_MCP_ALLOWED_ORIGINS are set via `fly secrets set`, not here,
+# since they depend on whatever hostname this app ends up with.
+
+app = "suade-fire-mcp"
+primary_region = "lhr"
+
+[build]
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

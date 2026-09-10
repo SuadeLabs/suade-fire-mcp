@@ -54,6 +54,39 @@ config entry like:
 }
 ```
 
+## Remote / hosted
+
+This serves over stdio by default (a local subprocess, for clients like Claude Code that launch
+it themselves). For clients that only speak to a server over HTTPS -- claude.ai's chat
+interface, Claude Desktop's remote connectors -- run it with the Streamable HTTP transport
+instead, over `FIRE_MCP_TRANSPORT=streamable-http`.
+
+**Run the published image** (a FIRE checkout is baked in at build time, pinned to a release
+tag -- no separate clone needed):
+
+```bash
+docker run -p 8000:8000 \
+  -e FIRE_MCP_ALLOWED_HOSTS=your-host.example.com \
+  -e FIRE_MCP_ALLOWED_ORIGINS=https://your-host.example.com \
+  ghcr.io/suadelabs/suade-fire-mcp:latest
+```
+
+`FIRE_MCP_ALLOWED_HOSTS` / `FIRE_MCP_ALLOWED_ORIGINS` are required -- without them every
+request from a real hostname is rejected with `421 Misdirected Request` (DNS-rebinding
+protection in the MCP SDK). Set them to wherever this is actually reachable.
+
+**Build your own image**, optionally pinned to a different FIRE tag:
+
+```bash
+docker build --build-arg FIRE_VERSION=v26.07 -t suade-fire-mcp .
+```
+
+This is a normal public image -- running your own copy anywhere needs nothing from Suade
+beyond the image itself, the same way cloning FIRE needs nothing beyond the repo.
+
+**Adding it to claude.ai**: once a URL is reachable, go to Settings -> Connectors -> Add
+custom connector, and enter `https://<your-host>/mcp`.
+
 ## What it exposes
 
 Resources:
