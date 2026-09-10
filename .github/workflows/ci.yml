@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: suade-fire-mcp
+
+      - uses: actions/checkout@v4
+        with:
+          repository: SuadeLabs/fire
+          path: fire
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        working-directory: suade-fire-mcp
+        run: |
+          pip install -e ".[dev]"
+          pip install ruff black==24.2.0
+
+      - name: Lint with ruff
+        working-directory: suade-fire-mcp
+        run: ruff check .
+
+      - name: Lint with black
+        working-directory: suade-fire-mcp
+        run: black . --check
+
+      - name: Test with pytest
+        working-directory: suade-fire-mcp
+        env:
+          FIRE_REPO_ROOT: ${{ github.workspace }}/fire
+        run: pytest tests -v
