@@ -106,14 +106,52 @@ def _inline_resolve(node: Any) -> Any:
     return node
 
 
+def _merge_allof(schema: dict, _seen: set[str] | None = None) -> tuple[dict, list[str]]:
+    """Recursively merge a schema's allOf branches' properties/required with
+    its own top-level properties/required (own declarations win on name
+    clashes). Only base entity schemas (customer/issuer/guarantor -> entity)
+    use allOf today; extension schemas' allOf is self-referential to their
+    own base file and is handled separately in resolve_entity_schema.
+    """
+    _seen = _seen if _seen is not None else set()
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for branch in schema.get("allOf", []):
+        if "$ref" in branch:
+            ref = branch["$ref"]
+            if ref in _seen:
+                continue
+            _seen.add(ref)
+            target = _load_ref_target(ref)
+        else:
+            target = branch
+        branch_properties, branch_required = _merge_allof(target, _seen)
+        properties.update(branch_properties)
+        required.extend(branch_required)
+    properties.update(_inline_resolve(schema.get("properties", {})))
+    required.extend(schema.get("required", []))
+    return properties, required
+
+
+def _dedupe(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
 def resolve_entity_schema(entity: str, with_extension: bool = False) -> dict:
     base = loader.load_schema(entity)
+    properties, required = _merge_allof(base)
     result: dict[str, Any] = {
         "title": base.get("title"),
         "description": base.get("description"),
         "type": base.get("type", "object"),
-        "required": base.get("required", []),
-        "properties": _inline_resolve(base.get("properties", {})),
+        "required": _dedupe(required),
+        "properties": properties,
     }
     if with_extension:
         extension = loader.load_extension_schema(entity)

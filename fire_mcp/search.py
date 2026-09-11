@@ -12,14 +12,14 @@ from typing import Any
 
 from rapidfuzz import fuzz, process
 
-from . import catalog, loader, refs
+from . import catalog, refs
 
 _INDEX_CACHE: list[tuple[str, str, dict]] | None = None
 
 
 def _build_index() -> list[tuple[str, str, dict]]:
     entries = []
-    for entity in loader.list_schema_names():
+    for entity in catalog.known_entity_names():
         resolved = refs.resolve_entity_schema(entity, with_extension=True)
         for field_name, spec in resolved.get("properties", {}).items():
             entries.append((entity, field_name, spec))

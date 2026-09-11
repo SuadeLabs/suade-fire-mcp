@@ -44,3 +44,35 @@ def test_bad_enum_detected():
     record["asset_class"] = "not_a_real_asset_class"
     issues = validation.validate_record(entity, record)
     assert any(issue.kind == "enum_mismatch" for issue in issues)
+
+
+def test_strict_mode_flags_unknown_field():
+    example_name, entity = CASES[0]
+    record = copy.deepcopy(_records(example_name, entity)[0])
+    record["bogus_field_xyz"] = "y"
+    issues = validation.validate_record(entity, record, strict=True)
+    assert any(
+        i.kind == "unknown_field" and i.path == "bogus_field_xyz" for i in issues
+    )
+
+
+def test_strict_mode_does_not_flag_known_fields():
+    example_name, entity = CASES[0]
+    record = copy.deepcopy(_records(example_name, entity)[0])
+    issues = validation.validate_record(entity, record, strict=True)
+    assert not any(i.kind == "unknown_field" for i in issues)
+
+
+def test_strict_mode_does_not_flag_allof_inherited_fields_on_customer():
+    issues = validation.validate_record(
+        "customer", {"id": "c1", "date": "2020-01-01T00:00:00Z"}, strict=True
+    )
+    assert not any(i.kind == "unknown_field" for i in issues)
+
+
+def test_non_strict_mode_still_accepts_unknown_field():
+    example_name, entity = CASES[0]
+    record = copy.deepcopy(_records(example_name, entity)[0])
+    record["bogus_field_xyz"] = "y"
+    issues = validation.validate_record(entity, record)
+    assert issues == []

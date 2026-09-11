@@ -47,6 +47,21 @@ def test_extension_composition_merges_base_and_extension_fields():
     assert not _has_ref(properties)
 
 
+def test_resolve_entity_schema_merges_allof_inherited_fields():
+    resolved = refs.resolve_entity_schema("customer")
+    assert "id" in resolved["properties"]
+    assert "name" in resolved["properties"]
+    assert "annual_debit_turnover" in resolved["properties"]
+    assert set(resolved["required"]) == {"id", "date"}
+
+
+def test_resolve_entity_schema_issuer_and_guarantor_are_entirely_inherited():
+    for entity in ("issuer", "guarantor"):
+        resolved = refs.resolve_entity_schema(entity)
+        assert "id" in resolved["properties"]
+        assert "date" in resolved["properties"]
+
+
 def test_unrecognised_ref_raises_without_network(no_network):
     with pytest.raises(refs.RefResolutionError):
         refs._load_ref_target("https://example.com/not-fire/schemas/loan.json#/x")

@@ -45,7 +45,10 @@ def _schema_for(entity: str, jurisdiction: str | None) -> dict:
 
 
 def validate_record(
-    entity: str, record: dict, jurisdiction: str | None = None
+    entity: str,
+    record: dict,
+    jurisdiction: str | None = None,
+    strict: bool = False,
 ) -> list[ValidationIssue]:
     catalog.ensure_known_entity(entity)
     schema = _schema_for(entity, jurisdiction)
@@ -64,4 +67,25 @@ def validate_record(
                 got=error.instance,
             )
         )
+
+    if strict:
+        # FIRE's own schemas set additionalProperties: true, so jsonschema
+        # never flags unrecognised keys -- diff manually against the
+        # inheritance-complete (allOf-merged), all-jurisdictions field set.
+        # Only top-level keys are checked; this does not recurse into nested
+        # objects/arrays.
+        known_fields = refs.resolve_entity_schema(entity, with_extension=True)[
+            "properties"
+        ]
+        for key in sorted(set(record) - set(known_fields)):
+            issues.append(
+                ValidationIssue(
+                    path=key,
+                    message=(
+                        f"{key!r} is not a recognised FIRE field on {entity!r} "
+                        "(base schema or any jurisdiction extension)."
+                    ),
+                    kind="unknown_field",
+                )
+            )
     return issues
