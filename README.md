@@ -128,7 +128,24 @@ Tools (all read-only):
 - `validate_batch(records, jurisdiction=None, strict=False)` -- validate up to 1000
   `{"entity", "record"}` pairs, plus cross-record `*_id` reference checks
 - `suggest_mapping(entity, source_fields, sample_values=None)` -- ranked, non-authoritative
-  mapping candidates for a list of your own field names
+  mapping candidates for a list of your own field names; returns
+  `{"candidates": [...], "basis": "..."}`, where `basis` explains what the scores mean
+
+## Disclaimer
+
+This is an open-source, AI-assisted tool, provided as-is under the Apache 2.0 license, with no
+warranty, SLA or support commitment. Use it at your own risk.
+
+- **Schemas, field definitions, examples and validation** come straight from the published
+  [FIRE standard](https://github.com/SuadeLabs/fire) at the pinned release. They are only as
+  current as that release.
+- **Mapping suggestions are not advice.** `suggest_mapping` ranks candidates by how similar
+  field names look, not by what the fields mean. The AI assistant using this server can also
+  misread or misapply any result. Check every mapping against the FIRE field definitions before
+  relying on it, and don't treat anything this server or an assistant says as a Suade
+  recommendation for regulatory reporting.
+- **Nothing you send is stored.** Tool arguments, including records passed to the validation
+  tools, are not persisted, and the hosted instance does not log them.
 
 ## License
 

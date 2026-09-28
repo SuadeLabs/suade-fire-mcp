@@ -30,6 +30,17 @@ MAX_BATCH_RECORDS = 1000
 
 _F = TypeVar("_F", bound=Callable[..., Any])
 
+# Returned with every suggest_mapping result, so the caveat travels with the
+# suggestions rather than living only in the README. It describes the result; it
+# is deliberately not phrased as an instruction to the model.
+MAPPING_BASIS = (
+    "Automated suggestions from text similarity between the source field names "
+    "and FIRE field names, plus enum membership of any sample values. They are "
+    "not reviewed or endorsed by Suade and can be wrong: a high score means the "
+    "names look alike, not that the meaning matches. Check each mapping against "
+    "the field's definition (get_field) before relying on it."
+)
+
 # Per-field keys returned by list_fields. The full field (enum values, doc excerpt)
 # is what get_field is for -- including it here puts the loan entity over the limit.
 _FIELD_SUMMARY_KEYS = (
@@ -215,13 +226,18 @@ def register(mcp: MCPServer) -> None:
         entity: str,
         source_fields: list[str],
         sample_values: dict[str, Any] | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Suggest FIRE field mappings for a list of internal/source field names.
 
         Ranked, non-authoritative candidates -- a starting point for a mapping
-        table, not a substitute for review.
+        table, not a substitute for review. Each candidate's `reason` says how it
+        was matched; the result's `basis` restates what the scores do and don't
+        mean.
         """
         candidates = search.suggest_mapping(
             entity, source_fields, sample_values=sample_values
         )
-        return [asdict(candidate) for candidate in candidates]
+        return {
+            "candidates": [asdict(candidate) for candidate in candidates],
+            "basis": MAPPING_BASIS,
+        }

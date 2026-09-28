@@ -62,3 +62,12 @@ def test_validate_record_returns_visible_content_when_valid():
     )
     assert result.structured_content == {"valid": True, "issues": []}
     assert result.content, "a valid record must not produce an empty result"
+
+
+def test_suggest_mapping_carries_its_basis_with_the_candidates():
+    result = _call(
+        "suggest_mapping", {"entity": "loan", "source_fields": ["cust_id", "bal_amt"]}
+    )
+    payload = result.structured_content
+    assert payload["basis"] == tools.MAPPING_BASIS
+    assert {c["source_field"] for c in payload["candidates"]} == {"cust_id", "bal_amt"}

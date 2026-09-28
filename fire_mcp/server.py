@@ -31,7 +31,9 @@ mcp = MCPServer(
         "Read-only reference for the FIRE (Financial Regulatory) data standard: "
         "entity schemas, field definitions and enum values, worked examples, record "
         "and batch validation, and suggested mappings from internal field names to "
-        "FIRE fields."
+        "FIRE fields. Mapping suggestions are automated and non-authoritative; "
+        "schemas, field definitions and validation come directly from the published "
+        "FIRE standard."
     ),
 )
 resources.register(mcp)
