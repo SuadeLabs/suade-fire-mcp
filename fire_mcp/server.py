@@ -8,15 +8,41 @@ instance reachable over HTTPS, e.g. for claude.ai's remote connectors).
 from __future__ import annotations
 
 import os
+from importlib.metadata import PackageNotFoundError, version
 
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 
 from . import resources, tools
 
-mcp = MCPServer("fire")
+try:
+    _VERSION = version("suade-fire-mcp")
+except PackageNotFoundError:  # running from a source tree without installing
+    _VERSION = "0.0.0"
+
+mcp = MCPServer(
+    "fire",
+    title="FIRE data standard",
+    version=_VERSION,
+    website_url="https://github.com/SuadeLabs/suade-fire-mcp",
+    instructions=(
+        "Read-only reference for the FIRE (Financial Regulatory) data standard: "
+        "entity schemas, field definitions and enum values, worked examples, record "
+        "and batch validation, and suggested mappings from internal field names to "
+        "FIRE fields. Mapping suggestions are automated and non-authoritative; "
+        "schemas, field definitions and validation come directly from the published "
+        "FIRE standard."
+    ),
+)
 resources.register(mcp)
 tools.register(mcp)
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health(request: Request) -> Response:
+    return JSONResponse({"status": "ok", "version": _VERSION})
 
 
 def _split_env_list(name: str) -> list[str]:
@@ -38,6 +64,11 @@ def _run_streamable_http() -> None:
     )
     mcp.run(
         transport="streamable-http",
+        # Every tool is a pure read of the baked-in FIRE checkout, so there is no
+        # session state worth keeping -- and without it, requests survive machine
+        # restarts and can land on any instance behind the load balancer.
+        stateless_http=True,
+        json_response=True,
         host="0.0.0.0",
         port=port,
         transport_security=security,

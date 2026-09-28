@@ -61,3 +61,19 @@ def test_main_streamable_http_passes_security_settings(monkeypatch):
     assert kwargs["port"] == 9001
     assert kwargs["transport_security"].allowed_hosts == ["example.com"]
     assert kwargs["transport_security"].allowed_origins == ["https://example.com"]
+    assert kwargs["stateless_http"] is True
+
+
+def test_health_route_bypasses_host_checks():
+    # Load balancer health checks hit the instance directly, not via the public hostname.
+    from starlette.testclient import TestClient
+
+    app = server.mcp.streamable_http_app(
+        transport_security=server.TransportSecuritySettings(
+            allowed_hosts=["fire-mcp.example.com"],
+            allowed_origins=["https://fire-mcp.example.com"],
+        )
+    )
+    response = TestClient(app, base_url="http://10.0.0.1:8000").get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"

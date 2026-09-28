@@ -84,8 +84,28 @@ docker build --build-arg FIRE_VERSION=v26.07 -t suade-fire-mcp .
 This is a normal public image -- running your own copy anywhere needs nothing from Suade
 beyond the image itself, the same way cloning FIRE needs nothing beyond the repo.
 
-**Adding it to claude.ai**: once a URL is reachable, go to Settings -> Connectors -> Add
-custom connector, and enter `https://<your-host>/mcp`.
+**Connecting from Claude**: the server is authless and every tool is read-only, so there is
+nothing to sign in to. Once a URL is reachable:
+
+- **claude.ai / Claude Desktop / mobile**: Customize -> Connectors -> Add custom connector, and
+  enter `https://<your-host>/mcp`. On Team and Enterprise plans an Owner adds it once for the
+  whole organization.
+- **Claude Code**: `claude mcp add --transport http fire https://<your-host>/mcp`
+
+**Operating a hosted instance**:
+
+- The HTTP transport is stateless (no MCP sessions), so machines can restart or scale out
+  without breaking anyone's conversation. `GET /health` returns `{"status": "ok"}` for load
+  balancer checks.
+- Claude's requests come from Anthropic's egress range `160.79.104.0/21`. Don't block it at a
+  firewall/WAF, and don't rate-limit per IP -- every claude.ai user shares those addresses.
+- Tool arguments (including draft records passed to `validate_record` / `validate_batch`) are
+  never stored, and are only logged at DEBUG level. Don't run a public instance with debug
+  logging on.
+- Tool results are sized to stay inside Claude's limits (~150k characters on claude.ai, 25k
+  tokens by default in Claude Code): `list_fields` returns per-field summaries, with enum
+  values and docs available one field at a time through `get_field`. `search_fields` is capped
+  at 50 results, and `validate_batch` at 1000 records per call.
 
 ## What it exposes
 
@@ -95,13 +115,37 @@ Resources:
 - `fire://examples/{name}` -- a worked example payload
 - `fire://extensions/{entity}` -- an entity's jurisdiction-specific extension fields, if any
 
-Tools:
+Tools (all read-only):
 - `list_entities` -- every FIRE entity with a short description
-- `search_fields(query)` -- fuzzy search over field names, descriptions and enum values
-- `get_field(entity, field)` -- full detail on one field
-- `validate_record(entity, record)` -- validate a JSON record against a FIRE schema
-- `suggest_mapping(entity, source_fields)` -- ranked, non-authoritative mapping candidates for a
-  list of your own field names
+- `list_fields(entity)` -- summary of every field on an entity, flagged required / enum
+- `search_fields(query, limit=10)` -- fuzzy search over field names, descriptions and enum
+  values (max 50 results)
+- `get_field(entity, field)` -- full detail on one field, including enum values and docs
+- `get_enum_definitions(entity, field)` -- the prose definition of each value of an enum field
+- `get_examples(name=None)` -- list the worked example payloads, or fetch one by name
+- `validate_record(entity, record, jurisdiction=None, strict=False)` -- validate a JSON record
+  against a FIRE schema; returns `{"valid": bool, "issues": [...]}`
+- `validate_batch(records, jurisdiction=None, strict=False)` -- validate up to 1000
+  `{"entity", "record"}` pairs, plus cross-record `*_id` reference checks
+- `suggest_mapping(entity, source_fields, sample_values=None)` -- ranked, non-authoritative
+  mapping candidates for a list of your own field names; returns
+  `{"candidates": [...], "basis": "..."}`, where `basis` explains what the scores mean
+
+## Disclaimer
+
+This is an open-source, AI-assisted tool, provided as-is under the Apache 2.0 license, with no
+warranty, SLA or support commitment. Use it at your own risk.
+
+- **Schemas, field definitions, examples and validation** come straight from the published
+  [FIRE standard](https://github.com/SuadeLabs/fire) at the pinned release. They are only as
+  current as that release.
+- **Mapping suggestions are not advice.** `suggest_mapping` ranks candidates by how similar
+  field names look, not by what the fields mean. The AI assistant using this server can also
+  misread or misapply any result. Check every mapping against the FIRE field definitions before
+  relying on it, and don't treat anything this server or an assistant says as a Suade
+  recommendation for regulatory reporting.
+- **Nothing you send is stored.** Tool arguments, including records passed to the validation
+  tools, are not persisted, and the hosted instance does not log them.
 
 ## License
 
