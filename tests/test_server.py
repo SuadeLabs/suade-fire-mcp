@@ -65,7 +65,7 @@ def test_main_streamable_http_passes_security_settings(monkeypatch):
 
 
 def test_health_route_bypasses_host_checks():
-    # Fly's health checker hits the machine directly, not via the public hostname.
+    # Load balancer health checks hit the instance directly, not via the public hostname.
     from starlette.testclient import TestClient
 
     app = server.mcp.streamable_http_app(
