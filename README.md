@@ -123,13 +123,16 @@ Tools (all read-only):
 - `get_field(entity, field)` -- full detail on one field, including enum values and docs
 - `get_enum_definitions(entity, field)` -- the prose definition of each value of an enum field
 - `get_examples(name=None)` -- list the worked example payloads, or fetch one by name
+- `find_examples(query, entity=None, limit=5)` -- find worked examples for a product or trade
+  type ("buy to let mortgage", "fx swap"), with the classification (enum) values each uses
 - `validate_record(entity, record, jurisdiction=None, strict=False)` -- validate a JSON record
   against a FIRE schema; returns `{"valid": bool, "issues": [...]}`
 - `validate_batch(records, jurisdiction=None, strict=False)` -- validate up to 1000
   `{"entity", "record"}` pairs, plus cross-record `*_id` reference checks
 - `suggest_mapping(entity, source_fields, sample_values=None)` -- ranked, non-authoritative
   mapping candidates for a list of your own field names; returns
-  `{"candidates": [...], "basis": "..."}`, where `basis` explains what the scores mean
+  `{"candidates": [...], "basis": "..."}`, where `basis` explains what the scores mean and each
+  candidate's `example_evidence` says how many worked examples populate that field
 
 ## Disclaimer
 

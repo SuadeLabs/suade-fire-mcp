@@ -17,7 +17,7 @@ def _call(name, args):
 
 def test_every_tool_has_a_title_and_read_only_annotations():
     listed = anyio.run(server.mcp.list_tools)
-    assert len(listed) == 9
+    assert len(listed) == 10
     for tool in listed:
         assert tool.title, tool.name
         assert len(tool.name) <= 64
@@ -71,3 +71,6 @@ def test_suggest_mapping_carries_its_basis_with_the_candidates():
     payload = result.structured_content
     assert payload["basis"] == tools.MAPPING_BASIS
     assert {c["source_field"] for c in payload["candidates"]} == {"cust_id", "bal_amt"}
+    assert all(
+        "used_in_examples" in c["example_evidence"] for c in payload["candidates"]
+    )

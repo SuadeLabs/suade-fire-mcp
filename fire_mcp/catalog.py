@@ -82,8 +82,12 @@ def known_entity_names() -> list[str]:
     return sorted(_KNOWN_ENTITIES)
 
 
+def is_known_entity(entity: str) -> bool:
+    return entity in _KNOWN_ENTITIES
+
+
 def ensure_known_entity(entity: str) -> None:
-    if entity not in _KNOWN_ENTITIES:
+    if not is_known_entity(entity):
         raise UnknownEntityError(entity)
 
 
