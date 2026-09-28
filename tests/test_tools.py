@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import anyio
 import pytest
-from mcp.server.mcpserver.exceptions import ResourceError, ToolError, UnexpectedToolError
+from mcp.server.mcpserver.exceptions import (
+    ResourceError,
+    ToolError,
+    UnexpectedToolError,
+)
 
 from fire_mcp import server, tools
 
