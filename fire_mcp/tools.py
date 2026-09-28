@@ -11,7 +11,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from . import batch, catalog, loader, search, validation
+from . import batch, catalog, examples, loader, search, validation
 
 # Every tool only reads the local FIRE checkout -- nothing is written, and the same
 # arguments always give the same result. Claude uses these hints to decide whether a
@@ -37,8 +37,11 @@ MAPPING_BASIS = (
     "Automated suggestions from text similarity between the source field names "
     "and FIRE field names, plus enum membership of any sample values. They are "
     "not reviewed or endorsed by Suade and can be wrong: a high score means the "
-    "names look alike, not that the meaning matches. Check each mapping against "
-    "the field's definition (get_field) before relying on it."
+    "names look alike, not that the meaning matches. Each candidate's "
+    "`example_evidence` counts how many of FIRE's reviewed worked examples "
+    "populate that field -- it shows the field is used in practice, not that it "
+    "is the right target for this source field. Check each mapping against the "
+    "field's definition (get_field) before relying on it."
 )
 
 # Per-field keys returned by list_fields. The full field (enum values, doc excerpt)
@@ -238,6 +241,34 @@ def register(mcp: MCPServer) -> None:
             entity, source_fields, sample_values=sample_values
         )
         return {
-            "candidates": [asdict(candidate) for candidate in candidates],
+            "candidates": [
+                {
+                    **asdict(candidate),
+                    "example_evidence": examples.evidence_for(
+                        entity, candidate.entity_field
+                    ),
+                }
+                for candidate in candidates
+            ],
             "basis": MAPPING_BASIS,
         }
+
+    @_tool(mcp, "Find worked examples")
+    def find_examples(
+        query: str, entity: str | None = None, limit: int = 5
+    ) -> list[dict[str, Any]]:
+        """Find FIRE's worked example records for a product or trade type, e.g.
+        "buy to let mortgage", "bridging loan" or "fx swap".
+
+        Each match includes the example's description, the entities it contains,
+        and the classification (enum) values its records use -- such as loan type,
+        purpose and repayment_type. Fetch the full records with get_examples(name).
+        Optionally restrict to examples containing one entity. Returns at most
+        20 matches.
+        """
+        if not 1 <= limit <= 20:
+            raise ValueError(f"limit must be between 1 and 20, got {limit}.")
+        return [
+            asdict(match)
+            for match in examples.find_examples(query, entity=entity, limit=limit)
+        ]
