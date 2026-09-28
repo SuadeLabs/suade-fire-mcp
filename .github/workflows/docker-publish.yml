@@ -30,3 +30,19 @@ jobs:
           tags: |
             ghcr.io/suadelabs/suade-fire-mcp:${{ github.ref_name }}
             ghcr.io/suadelabs/suade-fire-mcp:latest
+
+  # Roll the hosted instance (fly.toml) onto the image just pushed, so a release tag is
+  # one image and one deploy. Needs a FLY_API_TOKEN repo secret (`fly tokens create deploy`).
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly
+        run: flyctl deploy --image ghcr.io/suadelabs/suade-fire-mcp:${{ github.ref_name }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

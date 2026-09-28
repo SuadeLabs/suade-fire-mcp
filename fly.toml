@@ -16,7 +16,24 @@ primary_region = "lhr"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 0
+  # Keep one machine warm: a cold start on the first request can push Claude's
+  # `initialize` call past its timeout, which shows up as "Couldn't reach the MCP server".
+  min_machines_running = 1
+
+  # All claude.ai traffic arrives from Anthropic's egress range (160.79.104.0/21), so a
+  # per-IP rate limit would throttle every Claude user at once. Cap concurrency per
+  # machine instead and let Fly start another machine under load.
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 50
+    hard_limit = 100
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/health"
+    timeout = "5s"
 
 [[vm]]
   size = "shared-cpu-1x"
