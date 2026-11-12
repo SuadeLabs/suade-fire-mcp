@@ -1,6 +1,6 @@
 [project]
 name = "suade-fire-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "MCP server exposing the FIRE data standard for schema mapping"
 requires-python = ">=3.10"
 dependencies = [
