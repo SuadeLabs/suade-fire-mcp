@@ -8,7 +8,7 @@ from mcp.server.mcpserver.exceptions import (
     UnexpectedToolError,
 )
 
-from fire_mcp import server, tools
+from fire_mcp import refs, server, tools
 
 
 def _call(name, args):
@@ -17,7 +17,7 @@ def _call(name, args):
 
 def test_every_tool_has_a_title_and_read_only_annotations():
     listed = anyio.run(server.mcp.list_tools)
-    assert len(listed) == 9
+    assert len(listed) == 10
     for tool in listed:
         assert tool.title, tool.name
         assert len(tool.name) <= 64
@@ -71,6 +71,9 @@ def test_suggest_mapping_carries_its_basis_with_the_candidates():
     payload = result.structured_content
     assert payload["basis"] == tools.MAPPING_BASIS
     assert {c["source_field"] for c in payload["candidates"]} == {"cust_id", "bal_amt"}
+    assert all(
+        "used_in_examples" in c["example_evidence"] for c in payload["candidates"]
+    )
 
 
 @pytest.mark.parametrize("name", ["../schemas/loan", "/etc/hostname", "bond_future/.."])
@@ -105,5 +108,21 @@ def test_validate_batch_truncates_issues_within_result_size_limit():
 
 def test_suggest_mapping_rejects_too_many_source_fields():
     fields = [f"f{i}" for i in range(tools.MAX_MAPPING_SOURCE_FIELDS + 1)]
-    with pytest.raises(ToolError, match="at most 200 source fields"):
+    with pytest.raises(
+        ToolError, match=f"at most {tools.MAX_MAPPING_SOURCE_FIELDS} source fields"
+    ):
         _call("suggest_mapping", {"entity": "loan", "source_fields": fields})
+
+
+def test_suggest_mapping_at_max_fields_stays_within_result_size_limit():
+    # Worst case: source fields named like FIRE's own security fields, so every
+    # candidate carries example evidence (names and enum values).
+    props = list(
+        refs.resolve_entity_schema("security", with_extension=True)["properties"]
+    )
+    source_fields = (props * 3)[: tools.MAX_MAPPING_SOURCE_FIELDS]
+    result = _call(
+        "suggest_mapping", {"entity": "security", "source_fields": source_fields}
+    )
+    # claude.ai caps tool results at ~150k characters; Claude Code at 25k tokens.
+    assert sum(len(block.text) for block in result.content) < 100_000
