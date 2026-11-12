@@ -109,8 +109,7 @@ def validate_record(
     if jurisdiction is not None:
         jurisdiction = canonical_jurisdiction(jurisdiction)
     schema = _schema_for(entity, jurisdiction)
-    resolver = refs.build_resolver(schema)
-    validator = jsonschema.Draft7Validator(schema, resolver=resolver)
+    validator = jsonschema.Draft7Validator(schema, registry=refs.REGISTRY)
 
     issues = []
     for error in validator.iter_errors(record):

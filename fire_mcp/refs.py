@@ -11,10 +11,9 @@ general JSON Schema resolver is not needed.
 
 Two resolution strategies live in this module:
 
-* :func:`build_resolver` hands jsonschema its own lazy resolver (via a
-  ``handlers`` callback that reads local files instead of the network) for
-  use during validation, where jsonschema's built-in fragment handling should
-  do the work.
+* :data:`REGISTRY` is a ``referencing`` registry whose ``retrieve`` callback
+  reads FIRE schemas from the local checkout instead of the network, for use
+  during validation, where jsonschema's own fragment handling does the work.
 * :func:`resolve_entity_schema` / :func:`resolve_extension_only` eagerly walk
   a schema and replace every ``$ref`` with its resolved value, producing a
   self-contained schema with no ``$ref`` left -- used for the `fire://schemas`
@@ -24,9 +23,11 @@ Two resolution strategies live in this module:
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Any
 
-import jsonschema
+from referencing import Registry, Resource
+from referencing.jsonschema import DRAFT7
 
 from . import loader
 
@@ -49,28 +50,20 @@ def _match_ref_url(url: str) -> str:
 # --- Lazy resolution, for jsonschema validation --------------------------
 
 
-def _remote_handler(uri: str) -> dict:
-    """jsonschema RefResolver handler for the https:// scheme.
+@lru_cache(maxsize=None)
+def _retrieve(uri: str) -> Resource:
+    """Load the FIRE schema a $ref URL names, from disk.
 
-    jsonschema strips any fragment before calling this (see
-    ``RefResolver.resolve_from_url``), so `uri` is always a bare schema URL
-    here; jsonschema resolves the fragment itself afterwards via
-    ``resolve_fragment``, which already does the right thing for both
-    common.json's flat keys and ``#/properties/<name>`` pointers.
+    referencing strips any fragment before calling this, so `uri` is always a
+    bare schema URL; the fragment (common.json's flat keys, or a
+    ``#/properties/<name>`` pointer) is then resolved by referencing itself.
+    Draft 7 is stated explicitly rather than read from each file's ``$schema``,
+    to match the Draft7Validator that validation runs with.
     """
-    entity = _match_ref_url(uri)
-    return loader.load_schema(entity)
+    return DRAFT7.create_resource(loader.load_schema(_match_ref_url(uri)))
 
 
-def build_resolver(schema: dict) -> jsonschema.RefResolver:
-    # TODO: jsonschema.RefResolver is soft-deprecated in favour of the
-    # `referencing` library (still works as of 4.25.1, via a back-compat
-    # shim, but emits a DeprecationWarning). Revisit once the mcp SDK's
-    # jsonschema floor and our own needs make a `referencing.Registry`
-    # based rewrite worthwhile.
-    return jsonschema.RefResolver(
-        base_uri="", referrer=schema, handlers={"https": _remote_handler}
-    )
+REGISTRY: Registry = Registry(retrieve=_retrieve)
 
 
 # --- Eager resolution, for presentation/search ----------------------------
