@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 import jsonschema
@@ -18,6 +20,59 @@ class ValidationIssue:
     kind: str
     expected: Any = None
     got: Any = None
+
+
+# Issues echo back part of the caller's record. Keep each echo short: a missing
+# required field's jsonschema "instance" is the whole record, and a 1000-record
+# batch of those would blow far past an assistant's tool result limit.
+_MAX_ECHO_CHARS = 200
+
+
+class UnknownJurisdictionError(ValueError):
+    def __init__(self, jurisdiction: str, known: list[str]):
+        super().__init__(
+            f"Unknown jurisdiction {jurisdiction!r}. Known jurisdictions: "
+            f"{', '.join(known) or 'none'}."
+        )
+        self.jurisdiction = jurisdiction
+
+
+@lru_cache(maxsize=None)
+def known_jurisdictions() -> tuple[str, ...]:
+    """Every jurisdiction any extension field is tagged with, across all entities."""
+    found: set[str] = set()
+    for entity in loader.list_extension_names():
+        extension = loader.load_extension_schema(entity) or {}
+        for spec in extension.get("properties", {}).values():
+            found.update(spec.get("jurisdictions") or [])
+    return tuple(sorted(found))
+
+
+def canonical_jurisdiction(jurisdiction: str) -> str:
+    by_upper = {name.upper(): name for name in known_jurisdictions()}
+    try:
+        return by_upper[jurisdiction.upper()]
+    except KeyError:
+        raise UnknownJurisdictionError(
+            jurisdiction, list(known_jurisdictions())
+        ) from None
+
+
+def _truncate(text: str) -> str:
+    if len(text) <= _MAX_ECHO_CHARS:
+        return text
+    return f"{text[:_MAX_ECHO_CHARS]}... ({len(text)} characters)"
+
+
+def _compact(value: Any) -> Any:
+    if isinstance(value, str):
+        return _truncate(value)
+    if isinstance(value, (dict, list)):
+        if len(json.dumps(value, default=str)) <= _MAX_ECHO_CHARS:
+            return value
+        kind = "object" if isinstance(value, dict) else "array"
+        return f"<{kind} with {len(value)} items>"
+    return value
 
 
 def _issue_kind(error: jsonschema.exceptions.ValidationError) -> str:
@@ -51,6 +106,8 @@ def validate_record(
     strict: bool = False,
 ) -> list[ValidationIssue]:
     catalog.ensure_known_entity(entity)
+    if jurisdiction is not None:
+        jurisdiction = canonical_jurisdiction(jurisdiction)
     schema = _schema_for(entity, jurisdiction)
     resolver = refs.build_resolver(schema)
     validator = jsonschema.Draft7Validator(schema, resolver=resolver)
@@ -58,13 +115,16 @@ def validate_record(
     issues = []
     for error in validator.iter_errors(record):
         path = "/".join(str(part) for part in error.absolute_path) or "<root>"
+        kind = _issue_kind(error)
         issues.append(
             ValidationIssue(
                 path=path,
-                message=error.message,
-                kind=_issue_kind(error),
-                expected=error.validator_value,
-                got=error.instance,
+                message=_truncate(error.message),
+                kind=kind,
+                expected=_compact(error.validator_value),
+                # For "required", the instance is the parent object -- the
+                # message already names the missing field.
+                got=None if kind == "missing_required" else _compact(error.instance),
             )
         )
 

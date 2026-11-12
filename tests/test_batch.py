@@ -63,3 +63,31 @@ def test_validate_batch_checks_plural_id_array_fields():
     missing = [i for i in result.referential_issues if i.field == "loan_ids"]
     assert len(missing) == 1
     assert missing[0].missing_id == "L-missing"
+
+
+def test_validate_batch_reports_bad_items_without_failing_the_batch():
+    records = [
+        {"entity": "loan"},
+        {"entity": "not_an_entity", "record": {}},
+        {"entity": "loan", "record": {"id": "L1", "date": "2020-01-01T00:00:00Z"}},
+    ]
+    result = batch.validate_batch(records)
+    kinds = {r.index: [i.kind for i in r.issues] for r in result.records}
+    assert kinds == {0: ["invalid_item"], 1: ["unknown_entity"], 2: []}
+
+
+def test_validate_batch_does_not_split_a_string_ids_field_into_characters():
+    records = [
+        {
+            "entity": "collateral",
+            "record": {
+                "id": "COL1",
+                "date": "2020-01-01T00:00:00Z",
+                "value": 100,
+                "loan_ids": "L12",
+            },
+        },
+    ]
+    result = batch.validate_batch(records)
+    assert result.referential_issues == []
+    assert any(i.kind == "type_mismatch" for i in result.records[0].issues)

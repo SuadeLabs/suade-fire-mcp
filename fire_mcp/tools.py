@@ -27,6 +27,8 @@ _READ_ONLY = ToolAnnotations(
 # claude.ai, 25k tokens by default in Claude Code).
 MAX_SEARCH_LIMIT = 50
 MAX_BATCH_RECORDS = 1000
+MAX_BATCH_ISSUES = 250
+MAX_MAPPING_SOURCE_FIELDS = 200
 
 _F = TypeVar("_F", bound=Callable[..., Any])
 
@@ -170,6 +172,9 @@ def register(mcp: MCPServer) -> None:
         jurisdiction extension) as kind="unknown_field" -- FIRE's own schemas set
         additionalProperties: true, so this check is not otherwise enforced.
 
+        jurisdiction (e.g. "US") also validates that jurisdiction's extension
+        fields; an unknown jurisdiction is an error.
+
         Returns {"valid": bool, "issues": [...]}; issues is empty when valid.
         """
         # Wrapped in an object rather than returning the bare issue list: an empty
@@ -198,6 +203,12 @@ def register(mcp: MCPServer) -> None:
         Cash-flow reconciliation and joint_customer_ids/joint_customer_structure
         length-matching are explicitly out of scope for this check.
 
+        Returns {"valid", "record_count", "issue_count", "truncated", "records",
+        "referential_issues"}. "records" lists only the records that have
+        issues; a malformed item or unknown entity is reported against that
+        item. At most 250 issues are returned per call -- "truncated" says
+        whether more were found, and "issue_count" is the full total.
+
         Accepts at most 1000 records per call.
         """
         if len(records) > MAX_BATCH_RECORDS:
@@ -207,18 +218,34 @@ def register(mcp: MCPServer) -> None:
                 "ids within the same call, so keep related records together."
             )
         result = batch.validate_batch(records, jurisdiction=jurisdiction, strict=strict)
-        return {
-            "records": [
+        issue_count = sum(len(r.issues) for r in result.records) + len(
+            result.referential_issues
+        )
+        budget = MAX_BATCH_ISSUES
+        records_out = []
+        for r in result.records:
+            if not r.issues or budget <= 0:
+                continue
+            shown = r.issues[:budget]
+            budget -= len(shown)
+            records_out.append(
                 {
                     "index": r.index,
                     "entity": r.entity,
-                    "issues": [asdict(issue) for issue in r.issues],
+                    "issues": [asdict(issue) for issue in shown],
                 }
-                for r in result.records
-            ],
-            "referential_issues": [
-                asdict(issue) for issue in result.referential_issues
-            ],
+            )
+        referential_out = [
+            asdict(issue) for issue in result.referential_issues[: max(budget, 0)]
+        ]
+        returned = sum(len(r["issues"]) for r in records_out) + len(referential_out)
+        return {
+            "valid": issue_count == 0,
+            "record_count": len(records),
+            "issue_count": issue_count,
+            "truncated": returned < issue_count,
+            "records": records_out,
+            "referential_issues": referential_out,
         }
 
     @_tool(mcp, "Suggest field mapping")
@@ -233,7 +260,14 @@ def register(mcp: MCPServer) -> None:
         table, not a substitute for review. Each candidate's `reason` says how it
         was matched; the result's `basis` restates what the scores do and don't
         mean.
+
+        Accepts at most 200 source fields per call.
         """
+        if len(source_fields) > MAX_MAPPING_SOURCE_FIELDS:
+            raise ValueError(
+                f"suggest_mapping accepts at most {MAX_MAPPING_SOURCE_FIELDS} source "
+                f"fields per call, got {len(source_fields)}. Split them across calls."
+            )
         candidates = search.suggest_mapping(
             entity, source_fields, sample_values=sample_values
         )

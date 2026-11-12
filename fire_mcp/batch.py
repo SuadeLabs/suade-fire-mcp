@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import validation
+from . import catalog, validation
 
 # Explicit, curated field-name -> target-entity table. Deliberately NOT
 # suffix-stripping heuristics: most *_id fields in FIRE (national_id,
@@ -60,13 +60,40 @@ class BatchValidationResult:
     referential_issues: list[ReferentialIssue]
 
 
+# Id values that can sensibly be compared as strings. Anything else (an object,
+# a nested list) is already reported as a type mismatch by schema validation.
+_SCALAR_ID_TYPES = (str, int)
+
+
+def _item_problem(item: Any) -> validation.ValidationIssue | None:
+    """Why a batch item can't be validated at all, or None if it's well-formed."""
+    if not isinstance(item, dict) or not isinstance(item.get("entity"), str):
+        return validation.ValidationIssue(
+            path="<item>",
+            message='Each batch item must be {"entity": str, "record": object}.',
+            kind="invalid_item",
+        )
+    if not isinstance(item.get("record"), dict):
+        return validation.ValidationIssue(
+            path="<item>/record",
+            message='Each batch item must have a "record" object.',
+            kind="invalid_item",
+        )
+    try:
+        catalog.ensure_known_entity(item["entity"])
+    except catalog.UnknownEntityError as exc:
+        return validation.ValidationIssue(
+            path="<item>/entity", message=str(exc), kind="unknown_entity"
+        )
+    return None
+
+
 def _index_present_ids(records: list[dict[str, Any]]) -> dict[str, set[str]]:
     present: dict[str, set[str]] = {}
     for item in records:
-        entity = item["entity"]
-        record = item["record"]
-        if record.get("id") is not None:
-            present.setdefault(entity, set()).add(str(record["id"]))
+        record_id = item["record"].get("id")
+        if isinstance(record_id, _SCALAR_ID_TYPES):
+            present.setdefault(item["entity"], set()).add(str(record_id))
     return present
 
 
@@ -78,7 +105,7 @@ def _referential_issues_for(
     issues = []
     for field_name, expected_entity in SINGLE_ID_FIELD_ENTITY_MAP.items():
         value = record.get(field_name)
-        if value is None:
+        if not isinstance(value, _SCALAR_ID_TYPES):
             continue
         value = str(value)
         if value not in present.get(expected_entity, set()):
@@ -98,8 +125,12 @@ def _referential_issues_for(
                 )
             )
     for field_name, expected_entity in PLURAL_ID_FIELD_ENTITY_MAP.items():
-        values = record.get(field_name) or []
+        values = record.get(field_name)
+        if not isinstance(values, list):
+            continue
         for value in values:
+            if not isinstance(value, _SCALAR_ID_TYPES):
+                continue
             value = str(value)
             if value not in present.get(expected_entity, set()):
                 issues.append(
@@ -124,11 +155,27 @@ def validate_batch(
     jurisdiction: str | None = None,
     strict: bool = False,
 ) -> BatchValidationResult:
-    """records: list of {"entity": str, "record": dict}."""
-    present = _index_present_ids(records)
+    """records: list of {"entity": str, "record": dict}.
+
+    A malformed item or unknown entity is reported against that item alone, so
+    one bad item doesn't hide the results for the rest of the batch.
+    """
+    if jurisdiction is not None:
+        jurisdiction = validation.canonical_jurisdiction(jurisdiction)
+    problems = [_item_problem(item) for item in records]
+    valid_items = [
+        item for item, problem in zip(records, problems, strict=True) if not problem
+    ]
+    present = _index_present_ids(valid_items)
     record_results = []
     referential_issues = []
-    for index, item in enumerate(records):
+    for index, (item, problem) in enumerate(zip(records, problems, strict=True)):
+        if problem is not None:
+            entity = item.get("entity") if isinstance(item, dict) else None
+            record_results.append(
+                BatchRecordResult(index=index, entity=str(entity), issues=[problem])
+            )
+            continue
         entity = item["entity"]
         issues = validation.validate_record(
             entity, item["record"], jurisdiction=jurisdiction, strict=strict

@@ -71,3 +71,39 @@ def test_suggest_mapping_carries_its_basis_with_the_candidates():
     payload = result.structured_content
     assert payload["basis"] == tools.MAPPING_BASIS
     assert {c["source_field"] for c in payload["candidates"]} == {"cust_id", "bal_amt"}
+
+
+@pytest.mark.parametrize("name", ["../schemas/loan", "/etc/hostname", "bond_future/.."])
+def test_get_examples_rejects_names_that_are_paths(name):
+    with pytest.raises(ToolError, match="No example named"):
+        _call("get_examples", {"name": name})
+
+
+def test_validate_batch_lists_only_records_with_issues():
+    records = [
+        {"entity": "loan", "record": {"id": "L1", "date": "2026-01-01T00:00:00Z"}},
+        {"entity": "loan", "record": {"id": "L2"}},
+    ]
+    payload = _call("validate_batch", {"records": records}).structured_content
+    assert payload["valid"] is False
+    assert payload["record_count"] == 2
+    assert payload["issue_count"] == 1
+    assert payload["truncated"] is False
+    assert [r["index"] for r in payload["records"]] == [1]
+
+
+def test_validate_batch_truncates_issues_within_result_size_limit():
+    records = [{"entity": "loan", "record": {"note": "x" * 3000}}] * 1000
+    result = _call("validate_batch", {"records": records})
+    payload = result.structured_content
+    assert payload["issue_count"] == 2000
+    assert payload["truncated"] is True
+    returned = sum(len(r["issues"]) for r in payload["records"])
+    assert returned == tools.MAX_BATCH_ISSUES
+    assert sum(len(block.text) for block in result.content) < 100_000
+
+
+def test_suggest_mapping_rejects_too_many_source_fields():
+    fields = [f"f{i}" for i in range(tools.MAX_MAPPING_SOURCE_FIELDS + 1)]
+    with pytest.raises(ToolError, match="at most 200 source fields"):
+        _call("suggest_mapping", {"entity": "loan", "source_fields": fields})
