@@ -2,11 +2,14 @@
 
 FIRE field names are abbreviated snake_case (`cust_id`, `mtm_dirty`,
 `acc_fv_change_before_taxes`), so token-based fuzzy scoring (rapidfuzz) does
-much better here than a plain character-diff ratio.
+much better here than a plain character-diff ratio. Both sides are normalised
+into lowercase space-separated words first, so a source system's `CustomerID`,
+`customer-id` or `CUSTOMER_ID` all compare equally against FIRE's `customer_id`.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,19 +17,44 @@ from rapidfuzz import fuzz, process
 
 from . import catalog, refs
 
-_INDEX_CACHE: list[tuple[str, str, dict]] | None = None
+# (entity, field name, field spec, [(channel, normalised text), ...])
+_IndexEntry = tuple[str, str, dict, list[tuple[str, str]]]
+_INDEX_CACHE: list[_IndexEntry] | None = None
+
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+_NON_ALNUM_RE = re.compile(r"[^0-9a-zA-Z]+")
 
 
-def _build_index() -> list[tuple[str, str, dict]]:
+def normalise(text: str) -> str:
+    """'OutstandingBalance' / 'outstanding_balance' -> 'outstanding balance'."""
+    text = _CAMEL_BOUNDARY_RE.sub(" ", text)
+    return " ".join(_NON_ALNUM_RE.sub(" ", text).lower().split())
+
+
+def _mapping_score(source: str, target: str, **kwargs: Any) -> float:
+    # token_set_ratio alone scores 100 whenever one name's words are a subset of
+    # the other's, so every "x id" source tied with the bare `id` field. WRatio
+    # handles abbreviations (cust -> customer); token_sort_ratio penalises the
+    # words that don't match.
+    return 0.5 * fuzz.WRatio(source, target, **kwargs) + 0.5 * fuzz.token_sort_ratio(
+        source, target, **kwargs
+    )
+
+
+def _build_index() -> list[_IndexEntry]:
     entries = []
     for entity in catalog.known_entity_names():
         resolved = refs.resolve_entity_schema(entity, with_extension=True)
         for field_name, spec in resolved.get("properties", {}).items():
-            entries.append((entity, field_name, spec))
+            texts = [
+                (kind, normalise(text))
+                for kind, text in _candidate_texts(field_name, spec)
+            ]
+            entries.append((entity, field_name, spec, texts))
     return entries
 
 
-def _get_index() -> list[tuple[str, str, dict]]:
+def _get_index() -> list[_IndexEntry]:
     global _INDEX_CACHE
     if _INDEX_CACHE is None:
         _INDEX_CACHE = _build_index()
@@ -58,16 +86,21 @@ def _candidate_texts(field_name: str, spec: dict) -> list[tuple[str, str]]:
 # query under plain WRatio (e.g. the enum value "customer" scores higher
 # against "customer id" than the field "customer_id" does). Down-weight
 # enum/description matches slightly so a genuine field-name match wins ties.
+# An exact match (after normalising) is never down-weighted, whatever its channel.
 _CHANNEL_WEIGHT = {"name": 1.0, "description": 0.92, "enum": 0.85}
 
 
 def search_fields(query: str, limit: int = 10) -> list[SearchResult]:
+    normalised_query = normalise(query)
     scored = []
-    for entity, field_name, spec in _get_index():
+    for entity, field_name, spec, texts in _get_index():
         best_score = 0.0
         best_on = "name"
-        for kind, text in _candidate_texts(field_name, spec):
-            score = fuzz.WRatio(query, text) * _CHANNEL_WEIGHT[kind]
+        for kind, text in texts:
+            if text == normalised_query:
+                score = 100.0
+            else:
+                score = fuzz.WRatio(normalised_query, text) * _CHANNEL_WEIGHT[kind]
             if score > best_score:
                 best_score, best_on = score, kind
         scored.append((best_score, entity, field_name, spec, best_on))
@@ -112,12 +145,19 @@ def suggest_mapping(
     results = []
     for source in source_fields:
         matches = process.extract(
-            source, field_names, scorer=fuzz.token_set_ratio, limit=limit_per_field
+            source,
+            field_names,
+            scorer=_mapping_score,
+            processor=normalise,
+            limit=limit_per_field,
         )
         sample = sample_values.get(source)
+        sample_text = normalise(str(sample)) if sample is not None else None
         for candidate_name, score, _ in matches:
-            enum = properties[candidate_name].get("enum")
-            is_enum_match = sample is not None and enum and str(sample) in enum
+            enum = properties[candidate_name].get("enum") or []
+            is_enum_match = sample_text is not None and sample_text in {
+                normalise(value) for value in enum
+            }
             adjusted = min(100.0, score + 15) if is_enum_match else score
             results.append(
                 MappingCandidate(

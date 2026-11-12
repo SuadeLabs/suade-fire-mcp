@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import copy
 
+import pytest
+
 from fire_mcp import loader, validation
 
 CASES = [
@@ -76,3 +78,32 @@ def test_non_strict_mode_still_accepts_unknown_field():
     record["bogus_field_xyz"] = "y"
     issues = validation.validate_record(entity, record)
     assert issues == []
+
+
+def test_missing_required_does_not_echo_the_whole_record():
+    issues = validation.validate_record("loan", {"note": "x" * 5000})
+    missing = [i for i in issues if i.kind == "missing_required"]
+    assert missing
+    assert all(i.got is None for i in missing)
+
+
+def test_long_values_are_truncated_in_issues():
+    issues = validation.validate_record(
+        "loan", {"id": "L1", "date": "2020-01-01T00:00:00Z", "balance": "9" * 5000}
+    )
+    (issue,) = issues
+    assert issue.kind == "type_mismatch"
+    assert len(issue.got) < 300
+    assert len(issue.message) < 300
+
+
+def test_unknown_jurisdiction_is_rejected():
+    with pytest.raises(
+        validation.UnknownJurisdictionError, match="Known jurisdictions"
+    ):
+        validation.validate_record("loan", {}, jurisdiction="NOT_A_JURISDICTION")
+
+
+def test_jurisdiction_is_case_insensitive():
+    record = {"id": "L1", "date": "2020-01-01T00:00:00Z"}
+    assert validation.validate_record("loan", record, jurisdiction="us") == []
