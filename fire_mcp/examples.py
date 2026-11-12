@@ -19,7 +19,8 @@ from typing import Any
 
 from rapidfuzz import fuzz
 
-from . import catalog, loader, refs, search
+from . import catalog, loader, refs
+from .text import normalise
 
 
 @dataclass
@@ -86,6 +87,16 @@ def field_usage() -> dict[tuple[str, str], FieldUsage]:
     return usage
 
 
+@lru_cache(maxsize=None)
+def entity_example_count(entity: str) -> int:
+    """How many examples contain at least one record of `entity`."""
+    return sum(
+        1
+        for name in loader.list_example_names()
+        if loader.load_example(name).get("data", {}).get(entity)
+    )
+
+
 def find_examples(
     query: str, entity: str | None = None, limit: int = 5
 ) -> list[ExampleMatch]:
@@ -100,16 +111,16 @@ def find_examples(
         # Normalised like search/suggest_mapping, so "FX_SWAP", "FX Swap" and
         # "fx swap" all match the fx_swap example equally.
         score = max(
-            fuzz.token_set_ratio(query, name, processor=search.normalise),
+            fuzz.token_set_ratio(query, name, processor=normalise),
             fuzz.token_set_ratio(
-                query, example.get("comment") or "", processor=search.normalise
+                query, example.get("comment") or "", processor=normalise
             )
             * 0.9,
         )
         # token_set_ratio scores any name containing every query word at 100, so
         # "buy to let mortgage" ties buy_to_let_mortgage with
         # buy_to_let_construction_mortgage. Break ties by penalising extra words.
-        closeness = fuzz.token_sort_ratio(query, name, processor=search.normalise)
+        closeness = fuzz.token_sort_ratio(query, name, processor=normalise)
         scored.append((score, closeness, name, example, entities))
     scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
     return [
@@ -124,8 +135,13 @@ def find_examples(
     ]
 
 
-def evidence_for(entity: str, field_name: str, max_examples: int = 3) -> dict[str, Any]:
-    """Compact example evidence for one candidate field, for suggest_mapping."""
+def evidence_for(entity: str, field_name: str, max_examples: int = 1) -> dict[str, Any]:
+    """Compact example evidence for one candidate field, for suggest_mapping.
+
+    One example name by default: it's a pointer for get_examples, and every
+    extra name costs ~45 characters on each of up to 300 candidates per call.
+    find_examples lists the rest.
+    """
     usage = field_usage().get((entity, field_name))
     if usage is None:
         return {"used_in_examples": 0}

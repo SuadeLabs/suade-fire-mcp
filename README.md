@@ -336,7 +336,9 @@ Tools (all read-only):
   mapping candidates for up to 100 of your own field names, in any naming style
   (`CustomerID`, `customer-id`, `cust_id`); returns
   `{"candidates": [...], "basis": "..."}`, where `basis` explains what the scores mean and each
-  candidate's `example_evidence` says how many worked examples populate that field
+  candidate's `example_evidence` says how many worked examples populate that field. Scores
+  include a small boost (up to 8 points, reported as `example_boost`) for fields the worked
+  examples use
 
 ## Disclaimer
 
