@@ -27,6 +27,9 @@ jobs:
         with:
           context: .
           push: true
+          # A pre-release tag (anything with a "-", e.g. v0.4.0-rc1) publishes only
+          # its own tag; :latest moves only for full releases. build-push-action
+          # skips the empty line the expression leaves for a pre-release.
           tags: |
             ghcr.io/suadelabs/suade-fire-mcp:${{ github.ref_name }}
-            ghcr.io/suadelabs/suade-fire-mcp:latest
+            ${{ !contains(github.ref_name, '-') && 'ghcr.io/suadelabs/suade-fire-mcp:latest' || '' }}

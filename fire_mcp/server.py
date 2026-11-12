@@ -8,6 +8,7 @@ instance reachable over HTTPS, e.g. for claude.ai's remote connectors).
 from __future__ import annotations
 
 import os
+import sys
 from importlib.metadata import PackageNotFoundError, version
 
 from mcp.server import MCPServer
@@ -15,7 +16,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from . import resources, tools
+from . import repo, resources, tools
 
 try:
     _VERSION = version("suade-fire-mcp")
@@ -76,6 +77,12 @@ def _run_streamable_http() -> None:
 
 
 def main() -> None:
+    # Fail fast with a readable message: an MCP client usually shows only the
+    # server's stderr, and a traceback there hides the one line that matters.
+    try:
+        repo.root()
+    except RuntimeError as exc:
+        sys.exit(f"fire-mcp: {exc}")
     transport = os.environ.get("FIRE_MCP_TRANSPORT", "stdio")
     if transport == "stdio":
         mcp.run()

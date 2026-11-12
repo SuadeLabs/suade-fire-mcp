@@ -4,11 +4,16 @@ schemas, extensions, documentation and examples without ever making a network ca
 This package and FIRE are separate repos, so FIRE_REPO_ROOT is the required way to point
 at a checkout. The walk-up-from-__file__ fallback below only helps if this package happens
 to be installed from inside a FIRE clone (e.g. local development against a vendored copy);
-it is not the supported path."""
+it is not the supported path.
+
+The checkout is located on first use rather than at import, so a missing or wrong
+FIRE_REPO_ROOT surfaces as a one-line error from server.main() instead of a traceback
+from deep inside an import."""
 
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -39,9 +44,26 @@ def _find_repo_root() -> Path:
     )
 
 
-REPO_ROOT = _find_repo_root()
-SCHEMAS_DIR = REPO_ROOT / "schemas"
-EXTENSION_SCHEMAS_DIR = REPO_ROOT / "extensions" / "schemas"
-DOCS_DIR = REPO_ROOT / "documentation" / "properties"
-EXTENSION_DOCS_DIR = REPO_ROOT / "extensions" / "documentation" / "properties"
-EXAMPLES_DIR = REPO_ROOT / "examples"
+@lru_cache(maxsize=None)
+def root() -> Path:
+    return _find_repo_root()
+
+
+def schemas_dir() -> Path:
+    return root() / "schemas"
+
+
+def extension_schemas_dir() -> Path:
+    return root() / "extensions" / "schemas"
+
+
+def docs_dir() -> Path:
+    return root() / "documentation" / "properties"
+
+
+def extension_docs_dir() -> Path:
+    return root() / "extensions" / "documentation" / "properties"
+
+
+def examples_dir() -> Path:
+    return root() / "examples"

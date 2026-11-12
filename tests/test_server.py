@@ -77,3 +77,33 @@ def test_health_route_bypasses_host_checks():
     response = TestClient(app, base_url="http://10.0.0.1:8000").get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+@pytest.fixture
+def fresh_repo_root():
+    """Let a test change FIRE_REPO_ROOT; restore the real checkout afterwards."""
+    from fire_mcp import repo
+
+    repo.root.cache_clear()
+    yield
+    repo.root.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "value, message",
+    [(None, "FIRE_REPO_ROOT is not set"), ("/", "does not look like a FIRE repo")],
+)
+def test_main_exits_with_one_line_when_fire_is_missing(
+    monkeypatch, fresh_repo_root, value, message
+):
+    if value is None:
+        monkeypatch.delenv("FIRE_REPO_ROOT", raising=False)
+        # Don't let the walk-up fallback find a FIRE checkout above this package.
+        monkeypatch.setattr(server.repo, "_looks_like_fire_repo", lambda path: False)
+    else:
+        monkeypatch.setenv("FIRE_REPO_ROOT", value)
+    monkeypatch.setattr(server.mcp, "run", lambda *a, **kw: pytest.fail("ran"))
+    with pytest.raises(SystemExit, match=message) as info:
+        server.main()
+    assert str(info.value).startswith("fire-mcp: ")
+    assert "\n" not in str(info.value)

@@ -6,11 +6,18 @@ requires-python = ">=3.10"
 dependencies = [
     "mcp==2.2.0",
     "jsonschema>=4.20,<5",
+    "referencing>=0.28",
     "rapidfuzz>=3.6",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0.0", "mcp[cli]==2.2.0"]
+dev = [
+    "pytest>=7.0.0",
+    "mcp[cli]==2.2.0",
+    # Pinned so local runs and CI lint identically.
+    "ruff==0.17.4",
+    "black==24.2.0",
+]
 
 [project.scripts]
 fire-mcp = "fire_mcp.server:main"
@@ -24,9 +31,11 @@ include = ["fire_mcp*"]
 
 [tool.ruff]
 line-length = 88
+exclude = ['*venv*']
+
+[tool.ruff.lint]
 select = ['E', 'W', 'F', 'B']
 ignore = ['E501']
-exclude = ['*venv*']
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

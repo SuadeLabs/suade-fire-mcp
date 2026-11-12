@@ -70,5 +70,23 @@ def test_unrecognised_ref_raises_without_network(no_network):
 def test_no_network_access_during_resolution_and_validation(no_network):
     from fire_mcp import validation
 
+    refs._retrieve.cache_clear()  # make validation retrieve every schema afresh
     refs.resolve_entity_schema("loan", with_extension=True)
     validation.validate_record("loan", {"id": "x", "date": "2020-01-01T00:00:00Z"})
+
+    # Errors in fields defined through $refs prove the refs were followed, not
+    # skipped: loan.accounting_treatment -> common.json, and customer -> allOf
+    # entity.json -> currency_code -> common.json.
+    date = "2020-01-01T00:00:00Z"
+    loan_issues = validation.validate_record(
+        "loan", {"id": "x", "date": date, "accounting_treatment": "nope"}
+    )
+    customer_issues = validation.validate_record(
+        "customer", {"id": "x", "date": date, "currency_code": "nope"}
+    )
+    assert [(i.path, i.kind) for i in loan_issues] == [
+        ("accounting_treatment", "enum_mismatch")
+    ]
+    assert [(i.path, i.kind) for i in customer_issues] == [
+        ("currency_code", "enum_mismatch")
+    ]
