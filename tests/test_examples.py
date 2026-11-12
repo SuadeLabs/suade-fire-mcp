@@ -10,6 +10,16 @@ def test_find_examples_matches_product_names():
     assert names[0] == "overdraft_account"
 
 
+def test_find_examples_prefers_the_closest_name_among_ties():
+    names = [m.name for m in examples.find_examples("buy to let mortgage", limit=2)]
+    assert names == ["buy_to_let_mortgage", "buy_to_let_construction_mortgage"]
+
+
+@pytest.mark.parametrize("query", ["Overdraft Account", "OVERDRAFT_ACCOUNT"])
+def test_find_examples_ignores_case_and_separator_style(query):
+    assert examples.find_examples(query, limit=1)[0].name == "overdraft_account"
+
+
 def _first_loan_example() -> tuple[str, dict]:
     # Derived from whatever examples the FIRE checkout has, so this passes both
     # before and after the SME example set (SuadeLabs/fire#690) lands.

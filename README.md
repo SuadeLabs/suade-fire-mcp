@@ -293,7 +293,7 @@ just as cloning FIRE needs nothing beyond the repo.
 - Tool results are sized to fit hosted assistants' result limits; for example, claude.ai
   allows ~150k characters and Claude Code 25k tokens by default. `list_fields` returns
   per-field summaries; `get_field` returns one field's enum values and docs. `search_fields`
-  is capped at 50 results and `suggest_mapping` at 200 source fields per call.
+  is capped at 50 results and `suggest_mapping` at 100 source fields per call.
   `validate_batch` takes up to 1000 records per call and returns at most 250 issues, with
   a `truncated` flag and the full `issue_count`. Values echoed back in issues are shortened.
 
@@ -331,7 +331,7 @@ Tools (all read-only):
   `{"valid", "record_count", "issue_count", "truncated", "records", "referential_issues"}`,
   where `records` lists only the records with issues
 - `suggest_mapping(entity, source_fields, sample_values=None)` -- ranked, non-authoritative
-  mapping candidates for up to 200 of your own field names, in any naming style
+  mapping candidates for up to 100 of your own field names, in any naming style
   (`CustomerID`, `customer-id`, `cust_id`); returns
   `{"candidates": [...], "basis": "..."}`, where `basis` explains what the scores mean and each
   candidate's `example_evidence` says how many worked examples populate that field

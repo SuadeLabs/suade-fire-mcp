@@ -28,7 +28,7 @@ _READ_ONLY = ToolAnnotations(
 MAX_SEARCH_LIMIT = 50
 MAX_BATCH_RECORDS = 1000
 MAX_BATCH_ISSUES = 250
-MAX_MAPPING_SOURCE_FIELDS = 200
+MAX_MAPPING_SOURCE_FIELDS = 100
 
 _F = TypeVar("_F", bound=Callable[..., Any])
 
@@ -264,7 +264,7 @@ def register(mcp: MCPServer) -> None:
         was matched; the result's `basis` restates what the scores do and don't
         mean.
 
-        Accepts at most 200 source fields per call.
+        Accepts at most 100 source fields per call.
         """
         if len(source_fields) > MAX_MAPPING_SOURCE_FIELDS:
             raise ValueError(

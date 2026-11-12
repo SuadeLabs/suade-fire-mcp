@@ -19,7 +19,7 @@ from typing import Any
 
 from rapidfuzz import fuzz
 
-from . import catalog, loader, refs
+from . import catalog, loader, refs, search
 
 
 @dataclass
@@ -97,13 +97,21 @@ def find_examples(
         entities = sorted(example.get("data", {}))
         if entity is not None and entity not in entities:
             continue
-        readable_name = name.replace("_", " ")
+        # Normalised like search/suggest_mapping, so "FX_SWAP", "FX Swap" and
+        # "fx swap" all match the fx_swap example equally.
         score = max(
-            fuzz.token_set_ratio(query, readable_name),
-            fuzz.token_set_ratio(query, example.get("comment") or "") * 0.9,
+            fuzz.token_set_ratio(query, name, processor=search.normalise),
+            fuzz.token_set_ratio(
+                query, example.get("comment") or "", processor=search.normalise
+            )
+            * 0.9,
         )
-        scored.append((score, name, example, entities))
-    scored.sort(key=lambda row: row[0], reverse=True)
+        # token_set_ratio scores any name containing every query word at 100, so
+        # "buy to let mortgage" ties buy_to_let_mortgage with
+        # buy_to_let_construction_mortgage. Break ties by penalising extra words.
+        closeness = fuzz.token_sort_ratio(query, name, processor=search.normalise)
+        scored.append((score, closeness, name, example, entities))
+    scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
     return [
         ExampleMatch(
             name=name,
@@ -112,7 +120,7 @@ def find_examples(
             entities=entities,
             classification=_classification(name),
         )
-        for score, name, example, entities in scored[:limit]
+        for score, _, name, example, entities in scored[:limit]
     ]
 
 
