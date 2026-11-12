@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly, so the fire-master job notices FIRE changes even when this repo is quiet.
+  schedule:
+    - cron: "0 6 * * 1"
 
 permissions:
   contents: read
@@ -19,9 +22,17 @@ jobs:
         with:
           path: suade-fire-mcp
 
+      # Test against the FIRE release the Docker image ships, not whatever
+      # master holds today -- the Dockerfile's ARG is the single source of truth.
+      - name: Read pinned FIRE version
+        id: fire
+        working-directory: suade-fire-mcp
+        run: echo "version=$(sed -n 's/^ARG FIRE_VERSION=//p' Dockerfile)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v7
         with:
           repository: SuadeLabs/fire
+          ref: ${{ steps.fire.outputs.version }}
           path: fire
 
       - name: Set up Python ${{ matrix.python-version }}
@@ -44,6 +55,36 @@ jobs:
         run: black . --check
 
       - name: Test with pytest
+        working-directory: suade-fire-mcp
+        env:
+          FIRE_REPO_ROOT: ${{ github.workspace }}/fire
+        run: pytest tests -v
+
+  # Early warning that FIRE master (the next release) would break this server.
+  # Non-blocking: a failure here means "fix before bumping FIRE_VERSION", not
+  # "this PR is broken".
+  fire-master:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: suade-fire-mcp
+
+      - uses: actions/checkout@v7
+        with:
+          repository: SuadeLabs/fire
+          path: fire
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        working-directory: suade-fire-mcp
+        run: pip install -e ".[dev]"
+
+      - name: Test with pytest against FIRE master
         working-directory: suade-fire-mcp
         env:
           FIRE_REPO_ROOT: ${{ github.workspace }}/fire

@@ -273,7 +273,7 @@ a comma-separated list. `PORT` defaults to `8000`.
 **Build your own image**, optionally pinned to a different FIRE tag:
 
 ```bash
-docker build --build-arg FIRE_VERSION=v26.10 -t suade-fire-mcp .
+docker build --build-arg FIRE_VERSION=v26.07 -t suade-fire-mcp .
 ```
 
 It's a normal public image. Running your own copy needs nothing from Suade beyond the image,

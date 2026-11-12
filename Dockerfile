@@ -2,7 +2,8 @@ FROM python:3.12-slim
 
 # Pinned to a FIRE release tag, not master -- this image serves many different people, so
 # it should be reproducible rather than silently changing when FIRE gets a new commit.
-ARG FIRE_VERSION=v26.07
+# CI reads this line to test against the same FIRE version, so bump it only here.
+ARG FIRE_VERSION=v26.10
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
