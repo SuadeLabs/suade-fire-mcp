@@ -283,7 +283,8 @@ just as cloning FIRE needs nothing beyond the repo.
 
 - The HTTP transport is stateless (no MCP sessions), so instances can restart or scale out
   without breaking anyone's conversation. `GET /health` returns `{"status": "ok"}` for load
-  balancer checks.
+  balancer checks, and the image's Docker `HEALTHCHECK` uses it.
+- The image runs as an unprivileged user (`fire`, uid 10001).
 - Don't rate-limit per IP. Hosted assistants send requests from shared egress ranges, so many
   users share one address. For example, claude.ai connects from Anthropic's `160.79.104.0/21`.
   Don't block that range at a firewall or WAF either.
@@ -300,9 +301,10 @@ just as cloning FIRE needs nothing beyond the repo.
 ## Development
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev]"   # includes the pinned ruff and black versions CI uses
 export FIRE_REPO_ROOT=/absolute/path/to/fire
 pytest
+ruff check . && black --check .
 ```
 
 ## What it exposes
