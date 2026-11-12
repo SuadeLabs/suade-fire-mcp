@@ -39,11 +39,12 @@ MAPPING_BASIS = (
     "Automated suggestions from text similarity between the source field names "
     "and FIRE field names, plus enum membership of any sample values. They are "
     "not reviewed or endorsed by Suade and can be wrong: a high score means the "
-    "names look alike, not that the meaning matches. Each candidate's "
-    "`example_evidence` counts how many of FIRE's reviewed worked examples "
-    "populate that field -- it shows the field is used in practice, not that it "
-    "is the right target for this source field. Check each mapping against the "
-    "field's definition (get_field) before relying on it."
+    "names look alike, not that the meaning matches. Scores also include a small "
+    "boost (up to 8 points, shown as `example_boost`) for fields that FIRE's "
+    "reviewed worked examples populate, and `example_evidence` counts those "
+    "examples -- that shows a field is used in practice, not that it is the "
+    "right target for this source field. Check each mapping against the field's "
+    "definition (get_field) before relying on it."
 )
 
 # Per-field keys returned by list_fields. The full field (enum values, doc excerpt)
@@ -261,8 +262,9 @@ def register(mcp: MCPServer) -> None:
 
         Ranked, non-authoritative candidates -- a starting point for a mapping
         table, not a substitute for review. Each candidate's `reason` says how it
-        was matched; the result's `basis` restates what the scores do and don't
-        mean.
+        was matched, and `example_boost` how many of its score's points come from
+        FIRE's worked examples using that field; the result's `basis` restates
+        what the scores do and don't mean.
 
         Accepts at most 100 source fields per call.
         """
