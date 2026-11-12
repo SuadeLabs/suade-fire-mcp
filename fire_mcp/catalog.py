@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 from . import docs, loader, refs
 
@@ -75,15 +76,17 @@ class ExampleSummary:
     comment: str | None
 
 
-_KNOWN_ENTITIES = set(loader.list_schema_names()) - _EXCLUDED_ENTITIES
+@lru_cache(maxsize=None)
+def _known_entities() -> frozenset[str]:
+    return frozenset(loader.list_schema_names()) - _EXCLUDED_ENTITIES
 
 
 def known_entity_names() -> list[str]:
-    return sorted(_KNOWN_ENTITIES)
+    return sorted(_known_entities())
 
 
 def is_known_entity(entity: str) -> bool:
-    return entity in _KNOWN_ENTITIES
+    return entity in _known_entities()
 
 
 def ensure_known_entity(entity: str) -> None:

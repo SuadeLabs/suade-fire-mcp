@@ -61,34 +61,36 @@ def _optional_text(directory: Path, name: str) -> str | None:
 
 
 def load_schema(entity: str) -> dict:
-    return _require_json(repo.SCHEMAS_DIR, entity)
+    return _require_json(repo.schemas_dir(), entity)
 
 
 def load_extension_schema(entity: str) -> dict | None:
-    return _optional_json(repo.EXTENSION_SCHEMAS_DIR, entity)
+    return _optional_json(repo.extension_schemas_dir(), entity)
 
 
 def load_doc(field: str) -> str | None:
-    return _optional_text(repo.DOCS_DIR, field)
+    return _optional_text(repo.docs_dir(), field)
 
 
 def load_extension_doc(field: str) -> str | None:
-    return _optional_text(repo.EXTENSION_DOCS_DIR, field)
+    return _optional_text(repo.extension_docs_dir(), field)
 
 
 def load_example(name: str) -> dict:
-    return _require_json(repo.EXAMPLES_DIR, name)
+    return _require_json(repo.examples_dir(), name)
 
 
 def list_schema_names() -> list[str]:
     # common.json holds shared field definitions referenced via $ref by the
     # other schemas; it isn't itself an entity (no properties/title/records).
-    return sorted(p.stem for p in repo.SCHEMAS_DIR.glob("*.json") if p.stem != "common")
+    return sorted(
+        p.stem for p in repo.schemas_dir().glob("*.json") if p.stem != "common"
+    )
 
 
 def list_extension_names() -> list[str]:
-    return sorted(p.stem for p in repo.EXTENSION_SCHEMAS_DIR.glob("*.json"))
+    return sorted(p.stem for p in repo.extension_schemas_dir().glob("*.json"))
 
 
 def list_example_names() -> list[str]:
-    return sorted(p.stem for p in repo.EXAMPLES_DIR.glob("*.json"))
+    return sorted(p.stem for p in repo.examples_dir().glob("*.json"))
