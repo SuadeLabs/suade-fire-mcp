@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Office/Business :: Financial",
 ]
 dependencies = [
-    "mcp==2.2.0",
+    "mcp==2.3.0",
     "jsonschema>=4.20,<5",
     # jsonschema only checks "format": "date-time" when this is importable.
     "rfc3339-validator>=0.1.4",
@@ -32,7 +32,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
-    "mcp[cli]==2.2.0",
+    "mcp[cli]==2.3.0",
     # Pinned so local runs and CI lint identically.
     "ruff==0.17.4",
     "black==24.2.0",
