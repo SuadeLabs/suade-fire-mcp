@@ -118,7 +118,10 @@ def register(mcp: MCPServer) -> None:
     def search_fields(query: str, limit: int = 10) -> list[dict[str, Any]]:
         """Search FIRE field names, descriptions and enum values for a query string.
 
-        Returns at most 50 results.
+        One result per field: `entities` lists every entity the field appears on
+        with that type and enum. A field whose enum differs by entity (e.g.
+        repayment_type on loan vs security) appears once per variant. Returns
+        at most 50 results.
         """
         _ensure_not_blank("query", query)
         if not 1 <= limit <= MAX_SEARCH_LIMIT:

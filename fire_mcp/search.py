@@ -9,7 +9,8 @@ into lowercase space-separated words first, so a source system's `CustomerID`,
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
 from typing import Any
 
 from rapidfuzz import fuzz, process
@@ -17,8 +18,32 @@ from rapidfuzz import fuzz, process
 from . import catalog, examples, refs
 from .text import normalise
 
-# (entity, field name, field spec, [(channel, normalised text), ...])
-_IndexEntry = tuple[str, str, dict, list[tuple[str, str]]]
+
+@dataclass
+class _IndexEntry:
+    """One searchable field, shared by every entity that defines it identically.
+
+    FIRE repeats most field names across entities (`balance` is on five), so
+    indexing per (entity, field) would let one field fill half of a result page
+    with identical rows. Entries are grouped by name, type and enum instead;
+    only fields whose enum genuinely differs by entity (loan.repayment_type vs
+    security.repayment_type) stay as separate entries. Descriptions do vary by
+    entity, so each variant keeps its own.
+    """
+
+    field: str
+    type: Any
+    enum: list[str] | None
+    # (entity, description, [(channel, normalised text), ...]) per entity.
+    variants: list[tuple[str, str | None, list[tuple[str, str]]]] = field(
+        default_factory=list
+    )
+
+    @property
+    def entities(self) -> list[str]:
+        return sorted(entity for entity, _, _ in self.variants)
+
+
 _INDEX_CACHE: list[_IndexEntry] | None = None
 
 
@@ -33,16 +58,22 @@ def _mapping_score(source: str, target: str, **kwargs: Any) -> float:
 
 
 def _build_index() -> list[_IndexEntry]:
-    entries = []
+    entries: dict[str, _IndexEntry] = {}
     for entity in catalog.known_entity_names():
         resolved = refs.resolve_entity_schema(entity, with_extension=True)
         for field_name, spec in resolved.get("properties", {}).items():
+            key = json.dumps([field_name, spec.get("type"), spec.get("enum")])
+            entry = entries.get(key)
+            if entry is None:
+                entry = entries[key] = _IndexEntry(
+                    field=field_name, type=spec.get("type"), enum=spec.get("enum")
+                )
             texts = [
                 (kind, normalise(text))
                 for kind, text in _candidate_texts(field_name, spec)
             ]
-            entries.append((entity, field_name, spec, texts))
-    return entries
+            entry.variants.append((entity, spec.get("description"), texts))
+    return list(entries.values())
 
 
 def _get_index() -> list[_IndexEntry]:
@@ -54,12 +85,14 @@ def _get_index() -> list[_IndexEntry]:
 
 @dataclass
 class SearchResult:
-    entity: str
     field: str
+    # Every entity on which this field has this type and enum.
+    entities: list[str]
     score: float
     matched_on: str
     type: str | None
     enum: list[str] | None
+    # From the entity whose text matched best (descriptions differ by entity).
     description: str | None
 
 
@@ -84,33 +117,33 @@ _CHANNEL_WEIGHT = {"name": 1.0, "description": 0.92, "enum": 0.85}
 def search_fields(query: str, limit: int = 10) -> list[SearchResult]:
     normalised_query = normalise(query)
     scored = []
-    for entity, field_name, spec, texts in _get_index():
+    for entry in _get_index():
         best_score = 0.0
         best_on = "name"
-        for kind, text in texts:
-            if text == normalised_query:
-                score = 100.0
-            else:
-                score = fuzz.WRatio(normalised_query, text) * _CHANNEL_WEIGHT[kind]
-            if score > best_score:
-                best_score, best_on = score, kind
-        scored.append((best_score, entity, field_name, spec, best_on))
+        best_description = entry.variants[0][1]
+        for _, description, texts in entry.variants:
+            for kind, text in texts:
+                if text == normalised_query:
+                    score = 100.0
+                else:
+                    score = fuzz.WRatio(normalised_query, text) * _CHANNEL_WEIGHT[kind]
+                if score > best_score:
+                    best_score, best_on, best_description = score, kind, description
+        scored.append((best_score, entry, best_on, best_description))
     scored.sort(key=lambda row: row[0], reverse=True)
 
-    results = []
-    for score, entity, field_name, spec, matched_on in scored[:limit]:
-        results.append(
-            SearchResult(
-                entity=entity,
-                field=field_name,
-                score=round(score, 1),
-                matched_on=matched_on,
-                type=spec.get("type"),
-                enum=spec.get("enum"),
-                description=spec.get("description"),
-            )
+    return [
+        SearchResult(
+            field=entry.field,
+            entities=entry.entities,
+            score=round(score, 1),
+            matched_on=matched_on,
+            type=entry.type,
+            enum=entry.enum,
+            description=description,
         )
-    return results
+        for score, entry, matched_on, description in scored[:limit]
+    ]
 
 
 @dataclass
