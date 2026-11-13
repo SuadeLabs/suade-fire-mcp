@@ -6,8 +6,11 @@ import pytest
 
 from fire_mcp import loader, validation
 
+# Examples whose records are clean under full validation, including RFC 3339
+# date-time checking. Many v26.10 examples carry dates without a UTC offset
+# (fixed upstream in SuadeLabs/fire#710), so bond_future is deliberately not here.
 CASES = [
-    ("bond_future", "derivative"),
+    ("encumbered_loan", "loan"),
     ("current_account_with_guarantee", "account"),
 ]
 
@@ -35,7 +38,7 @@ def test_missing_required_field_detected():
 def test_wrong_type_detected():
     example_name, entity = CASES[0]
     record = copy.deepcopy(_records(example_name, entity)[0])
-    record["notional_amount"] = "not-a-number"
+    record["balance"] = "not-a-number"
     issues = validation.validate_record(entity, record)
     assert any(issue.kind == "type_mismatch" for issue in issues)
 
@@ -43,9 +46,26 @@ def test_wrong_type_detected():
 def test_bad_enum_detected():
     example_name, entity = CASES[0]
     record = copy.deepcopy(_records(example_name, entity)[0])
-    record["asset_class"] = "not_a_real_asset_class"
+    record["accounting_treatment"] = "not_a_real_treatment"
     issues = validation.validate_record(entity, record)
     assert any(issue.kind == "enum_mismatch" for issue in issues)
+
+
+@pytest.mark.parametrize(
+    "value", ["2026-01-01T00:00:00", "2026-01-01 00:00:00Z", "2026-01-01", "yesterday"]
+)
+def test_date_time_not_in_rfc3339_form_detected(value):
+    issues = validation.validate_record("loan", {"id": "L1", "date": value})
+    assert [(i.path, i.kind) for i in issues] == [("date", "format_mismatch")]
+    assert issues[0].got == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["2026-01-01T00:00:00Z", "2026-01-01T00:00:00+01:00", "2026-01-01T00:00:00.5Z"],
+)
+def test_rfc3339_date_time_variants_pass(value):
+    assert validation.validate_record("loan", {"id": "L1", "date": value}) == []
 
 
 def test_strict_mode_flags_unknown_field():

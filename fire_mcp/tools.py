@@ -26,6 +26,7 @@ _READ_ONLY = ToolAnnotations(
 # Keep tool results well inside Claude's result size limits (~150k characters on
 # claude.ai, 25k tokens by default in Claude Code).
 MAX_SEARCH_LIMIT = 50
+MAX_FIND_EXAMPLES_LIMIT = 20
 MAX_BATCH_RECORDS = 1000
 MAX_BATCH_ISSUES = 250
 MAX_MAPPING_SOURCE_FIELDS = 100
@@ -64,6 +65,13 @@ def _field_summary(field: catalog.Field) -> dict[str, Any]:
     summary = {key: getattr(field, key) for key in _FIELD_SUMMARY_KEYS}
     summary["is_enum"] = field.enum is not None
     return summary
+
+
+def _ensure_not_blank(name: str, value: str) -> None:
+    # A blank query matches nothing, so fuzzy scoring returns arbitrary fields
+    # at score 0 -- a result that looks like an answer but isn't one.
+    if not value.strip():
+        raise ValueError(f"{name} must not be blank.")
 
 
 def _tool(mcp: MCPServer, title: str) -> Callable[[_F], _F]:
@@ -112,6 +120,7 @@ def register(mcp: MCPServer) -> None:
 
         Returns at most 50 results.
         """
+        _ensure_not_blank("query", query)
         if not 1 <= limit <= MAX_SEARCH_LIMIT:
             raise ValueError(
                 f"limit must be between 1 and {MAX_SEARCH_LIMIT}, got {limit}."
@@ -179,7 +188,10 @@ def register(mcp: MCPServer) -> None:
         jurisdiction (e.g. "US") also validates that jurisdiction's extension
         fields; an unknown jurisdiction is an error.
 
-        Returns {"valid": bool, "issues": [...]}; issues is empty when valid.
+        Returns {"valid": bool, "issues": [...]}; issues is empty when valid. Each
+        issue's kind is one of missing_required, type_mismatch, enum_mismatch,
+        format_mismatch (a date-time field not in RFC 3339 form, e.g. missing the
+        trailing Z), unknown_field (strict only) or other.
         """
         # Wrapped in an object rather than returning the bare issue list: an empty
         # list serialises to no content blocks at all, so a valid record would
@@ -266,12 +278,19 @@ def register(mcp: MCPServer) -> None:
         FIRE's worked examples using that field; the result's `basis` restates
         what the scores do and don't mean.
 
-        Accepts at most 100 source fields per call.
+        Accepts between 1 and 100 source fields per call.
         """
+        if not source_fields:
+            raise ValueError("source_fields must not be empty.")
         if len(source_fields) > MAX_MAPPING_SOURCE_FIELDS:
             raise ValueError(
                 f"suggest_mapping accepts at most {MAX_MAPPING_SOURCE_FIELDS} source "
                 f"fields per call, got {len(source_fields)}. Split them across calls."
+            )
+        blank = [i for i, name in enumerate(source_fields) if not name.strip()]
+        if blank:
+            raise ValueError(
+                f"source_fields must not contain blank names (at positions {blank})."
             )
         candidates = search.suggest_mapping(
             entity, source_fields, sample_values=sample_values
@@ -302,8 +321,11 @@ def register(mcp: MCPServer) -> None:
         Optionally restrict to examples containing one entity. Returns at most
         20 matches.
         """
-        if not 1 <= limit <= 20:
-            raise ValueError(f"limit must be between 1 and 20, got {limit}.")
+        _ensure_not_blank("query", query)
+        if not 1 <= limit <= MAX_FIND_EXAMPLES_LIMIT:
+            raise ValueError(
+                f"limit must be between 1 and {MAX_FIND_EXAMPLES_LIMIT}, got {limit}."
+            )
         return [
             asdict(match)
             for match in examples.find_examples(query, entity=entity, limit=limit)

@@ -6,8 +6,12 @@ requires-python = ">=3.10"
 dependencies = [
     "mcp==2.2.0",
     "jsonschema>=4.20,<5",
+    # jsonschema only checks "format": "date-time" when this is importable.
+    "rfc3339-validator>=0.1.4",
     "referencing>=0.28",
     "rapidfuzz>=3.6",
+    # Imported directly by server.py; mcp's own floor on Python < 3.14.
+    "starlette>=0.27",
 ]
 
 [project.optional-dependencies]

@@ -18,6 +18,12 @@ from starlette.responses import JSONResponse, Response
 
 from . import repo, resources, tools
 
+# The SDK rejects request bodies over 4 MiB by default, which a full
+# validate_batch call (tools.MAX_BATCH_RECORDS records) of wide records can
+# exceed -- and the failure would then come from the transport, not from the
+# tool's own size message. 16 MiB covers 1000 records of ~16 KB each.
+MAX_REQUEST_BODY_SIZE = 16 * 1024 * 1024
+
 try:
     _VERSION = version("suade-fire-mcp")
 except PackageNotFoundError:  # running from a source tree without installing
@@ -72,6 +78,7 @@ def _run_streamable_http() -> None:
         json_response=True,
         host="0.0.0.0",
         port=port,
+        max_request_body_size=MAX_REQUEST_BODY_SIZE,
         transport_security=security,
     )
 
