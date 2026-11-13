@@ -7,10 +7,14 @@ on:
   # Weekly, so the fire-master job notices FIRE changes even when this repo is quiet.
   schedule:
     - cron: "0 6 * * 1"
+  # Lets docker-publish.yml run this whole workflow before it builds an image.
+  workflow_call:
 
 permissions:
   contents: read
 
+# Actions are pinned to commit SHAs (Dependabot keeps them current) so a moved
+# tag can't change what runs here.
 jobs:
   test:
     runs-on: ubuntu-24.04
@@ -18,7 +22,7 @@ jobs:
       matrix:
         python-version: ["3.10", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: suade-fire-mcp
 
@@ -29,14 +33,14 @@ jobs:
         working-directory: suade-fire-mcp
         run: echo "version=$(sed -n 's/^ARG FIRE_VERSION=//p' Dockerfile)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: SuadeLabs/fire
           ref: ${{ steps.fire.outputs.version }}
           path: fire
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -59,22 +63,23 @@ jobs:
         run: pytest tests -v
 
   # Early warning that FIRE master (the next release) would break this server.
-  # Non-blocking: a failure here means "fix before bumping FIRE_VERSION", not
-  # "this PR is broken".
+  # On pushes and PRs it is non-blocking: a failure means "fix before bumping
+  # FIRE_VERSION", not "this PR is broken". The weekly scheduled run is allowed
+  # to fail for real, because that is the only way anyone gets notified.
   fire-master:
     runs-on: ubuntu-24.04
-    continue-on-error: true
+    continue-on-error: ${{ github.event_name != 'schedule' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           path: suade-fire-mcp
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: SuadeLabs/fire
           path: fire
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.12"
 
