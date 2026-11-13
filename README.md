@@ -17,8 +17,8 @@ There are three ways to run the server. Pick one, then follow
 
 | Option | Needs | Best for |
 | --- | --- | --- |
-| **A. Docker** (recommended) | Docker | Most people. FIRE is built into the image, pinned to a release tag, so you don't clone anything. |
-| **B. Python** | Python 3.10+, a FIRE clone | People without Docker, or who want to use a different FIRE version or a modified one. |
+| **A. Docker** | Docker, and for now a SuadeLabs GitHub login (see below) | Most people, once the image is public. FIRE is built into the image, pinned to a release tag, so you don't clone anything. |
+| **B. Python** | Python 3.10+, a FIRE clone | Anyone outside SuadeLabs today; people without Docker; or anyone who wants a different or modified FIRE version. |
 | **C. Remote URL** | A hosted instance ([Hosting](#hosting-a-shared-instance)) | Chat apps that only accept a URL (claude.ai, ChatGPT), or sharing one instance with a team. |
 
 ### A. Docker
@@ -29,6 +29,11 @@ yourself; just check that Docker can pull the image:
 ```bash
 docker pull ghcr.io/suadelabs/suade-fire-mcp:latest
 ```
+
+> **The image is currently private.** Until a SuadeLabs org admin makes the package public, an
+> anonymous pull is denied. SuadeLabs members can
+> `docker login ghcr.io` with a GitHub personal access token that has `read:packages`;
+> everyone else should use option B for now.
 
 To run it, the client uses this command:
 
@@ -243,7 +248,9 @@ Ask your assistant to *"list the FIRE entities"*. It should call `list_entities`
   absolute path of the FIRE clone. That directory contains `schemas/` and `documentation/`.
 - **The server starts, then exits immediately under Docker:** check that `-i` is in `args`.
 - **`421 Misdirected Request` from a remote URL:** the host's `FIRE_MCP_ALLOWED_HOSTS` doesn't
-  include the hostname you're using (see below).
+  include the hostname you're using (see below). The match is exact and includes any port, so
+  a local test against `http://localhost:8000/mcp` needs `localhost:8000` (or `localhost:*`)
+  in the list, not `localhost`.
 
 To test the server without an assistant, use the
 [MCP Inspector](https://github.com/modelcontextprotocol/inspector):
@@ -268,7 +275,9 @@ Put it behind HTTPS (a reverse proxy or your platform's load balancer). Clients 
 `FIRE_MCP_ALLOWED_HOSTS` and `FIRE_MCP_ALLOWED_ORIGINS` are required. Without them, the MCP
 SDK's DNS-rebinding protection rejects every request from a real hostname with
 `421 Misdirected Request`. Set both to wherever the instance is actually reachable. Each takes
-a comma-separated list. `PORT` defaults to `8000`.
+a comma-separated list, matched exactly against the request's `Host` / `Origin` header, so
+include the port when clients will send one (`localhost:8000`, or `localhost:*` for any port).
+`PORT` defaults to `8000`.
 
 **Build your own image**, optionally pinned to a different FIRE tag:
 
@@ -276,8 +285,8 @@ a comma-separated list. `PORT` defaults to `8000`.
 docker build --build-arg FIRE_VERSION=v26.07 -t suade-fire-mcp .
 ```
 
-It's a normal public image. Running your own copy needs nothing from Suade beyond the image,
-just as cloning FIRE needs nothing beyond the repo.
+Running your own copy needs nothing from Suade beyond the image (or this repo to build it),
+just as cloning FIRE needs nothing beyond the FIRE repo.
 
 **Operating notes:**
 
@@ -297,6 +306,8 @@ just as cloning FIRE needs nothing beyond the repo.
   is capped at 50 results and `suggest_mapping` at 100 source fields per call.
   `validate_batch` takes up to 1000 records per call and returns at most 250 issues, with
   a `truncated` flag and the full `issue_count`. Values echoed back in issues are shortened.
+- The HTTP transport accepts request bodies up to 16 MiB, enough for a full 1000-record
+  `validate_batch` call. A reverse proxy in front of it needs at least the same limit.
 
 ## Development
 
