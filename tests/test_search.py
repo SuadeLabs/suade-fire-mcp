@@ -24,7 +24,7 @@ def test_search_fields_short_id_query_ranks_id_fields_first():
 
 def test_search_fields_excludes_example_meta_schema():
     results = search.search_fields("comment", limit=20)
-    assert all(r.entity != "example" for r in results)
+    assert all("example" not in r.entities for r in results)
 
 
 def test_search_index_includes_allof_inherited_fields():
@@ -32,4 +32,25 @@ def test_search_index_includes_allof_inherited_fields():
     # in the index at all, not that ranking surfaces it near the top (search
     # ranking/noise reduction is a separate, out-of-scope concern).
     results = search.search_fields("customer id", limit=20)
-    assert any(r.entity == "customer" and r.field == "id" for r in results)
+    assert any(r.field == "id" and "customer" in r.entities for r in results)
+
+
+def test_search_fields_groups_a_shared_field_into_one_row():
+    results = search.search_fields("balance", limit=10)
+    balance_rows = [r for r in results if r.field == "balance"]
+    assert len(balance_rows) == 1
+    assert {"account", "loan", "security"} <= set(balance_rows[0].entities)
+    assert balance_rows[0].description
+    # The freed slots go to other fields rather than repeats.
+    assert len({r.field for r in results}) == len(results)
+
+
+def test_search_fields_keeps_fields_whose_enum_differs_by_entity_separate():
+    rows = [
+        r for r in search.search_fields("repayment_type") if r.field == "repayment_type"
+    ]
+    by_entity = {entity: set(r.enum) for r in rows for entity in r.entities}
+    assert {"loan", "security"} <= set(by_entity)
+    assert by_entity["loan"] != by_entity["security"]
+    # Each variant is its own row: no row lists an entity under the wrong enum.
+    assert len(rows) == len({frozenset(r.enum) for r in rows})

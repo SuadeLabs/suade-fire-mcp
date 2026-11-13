@@ -319,7 +319,8 @@ Tools (all read-only):
 - `list_entities` -- every FIRE entity with a short description
 - `list_fields(entity)` -- summary of every field on an entity, flagged required / enum
 - `search_fields(query, limit=10)` -- fuzzy search over field names, descriptions and enum
-  values (max 50 results)
+  values (max 50 results). One result per field, with the list of entities it appears on;
+  a field whose enum differs by entity appears once per variant
 - `get_field(entity, field)` -- full detail on one field, including enum values and docs
 - `get_enum_definitions(entity, field)` -- the prose definition of each value of an enum field
 - `get_examples(name=None)` -- list the worked example payloads, or fetch one by name
