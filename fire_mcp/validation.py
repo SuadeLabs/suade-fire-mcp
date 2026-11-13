@@ -1,4 +1,10 @@
-"""Validate a record against a FIRE entity schema, without any network access."""
+"""Validate a record against a FIRE entity schema, without any network access.
+
+Formats are checked as well as types: FIRE declares ``"format": "date-time"`` on
+every date field (and ``"uri"`` on one), and jsonschema only enforces a format
+when a checker for it is installed. ``rfc3339-validator`` is a dependency so
+``date-time`` is always checked; ``uri`` is not, since the extra package it needs
+isn't worth pulling in for one field."""
 
 from __future__ import annotations
 
@@ -82,6 +88,8 @@ def _issue_kind(error: jsonschema.exceptions.ValidationError) -> str:
         return "type_mismatch"
     if error.validator == "enum":
         return "enum_mismatch"
+    if error.validator == "format":
+        return "format_mismatch"
     return "other"
 
 
@@ -109,7 +117,11 @@ def validate_record(
     if jurisdiction is not None:
         jurisdiction = canonical_jurisdiction(jurisdiction)
     schema = _schema_for(entity, jurisdiction)
-    validator = jsonschema.Draft7Validator(schema, registry=refs.REGISTRY)
+    validator = jsonschema.Draft7Validator(
+        schema,
+        registry=refs.REGISTRY,
+        format_checker=jsonschema.Draft7Validator.FORMAT_CHECKER,
+    )
 
     issues = []
     for error in validator.iter_errors(record):

@@ -326,8 +326,9 @@ Tools (all read-only):
 - `find_examples(query, entity=None, limit=5)` -- find worked examples for a product or trade
   type ("buy to let mortgage", "fx swap"), with the classification (enum) values each uses
 - `validate_record(entity, record, jurisdiction=None, strict=False)` -- validate a JSON record
-  against a FIRE schema; returns `{"valid": bool, "issues": [...]}`. `jurisdiction` (e.g.
-  `US`) adds that jurisdiction's extension fields; an unknown value is an error
+  against a FIRE schema, including RFC 3339 form for `date-time` fields; returns
+  `{"valid": bool, "issues": [...]}`. `jurisdiction` (e.g. `US`) adds that jurisdiction's
+  extension fields; an unknown value is an error
 - `validate_batch(records, jurisdiction=None, strict=False)` -- validate up to 1000
   `{"entity", "record"}` pairs, plus cross-record `*_id` reference checks; returns
   `{"valid", "record_count", "issue_count", "truncated", "records", "referential_issues"}`,
@@ -347,7 +348,10 @@ warranty, SLA or support commitment. Use it at your own risk.
 
 - **Schemas, field definitions, examples and validation** come straight from the published
   [FIRE standard](https://github.com/SuadeLabs/fire) at the pinned release. They are only as
-  current as that release.
+  current as that release. Some of FIRE v26.10's own worked examples carry dates without a
+  UTC offset (`2019-04-30T00:00:00`), which the validation tools correctly report as
+  `format_mismatch`; [SuadeLabs/fire#710](https://github.com/SuadeLabs/fire/pull/710) fixes
+  them upstream.
 - **Mapping suggestions are not advice.** `suggest_mapping` ranks candidates by how similar
   field names look, not by what the fields mean. The AI assistant using this server can also
   misread or misapply any result. Check every mapping against the FIRE field definitions before

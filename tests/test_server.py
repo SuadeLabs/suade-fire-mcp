@@ -62,6 +62,7 @@ def test_main_streamable_http_passes_security_settings(monkeypatch):
     assert kwargs["transport_security"].allowed_hosts == ["example.com"]
     assert kwargs["transport_security"].allowed_origins == ["https://example.com"]
     assert kwargs["stateless_http"] is True
+    assert kwargs["max_request_body_size"] == server.MAX_REQUEST_BODY_SIZE
 
 
 def test_health_route_bypasses_host_checks():

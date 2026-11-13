@@ -41,6 +41,34 @@ def test_search_fields_rejects_limit_over_cap():
         _call("search_fields", {"query": "rate", "limit": tools.MAX_SEARCH_LIMIT + 1})
 
 
+@pytest.mark.parametrize(
+    "name, args",
+    [
+        ("search_fields", {"query": "  "}),
+        ("find_examples", {"query": ""}),
+        ("suggest_mapping", {"entity": "loan", "source_fields": ["cust_id", " "]}),
+    ],
+)
+def test_blank_queries_are_rejected_instead_of_matching_everything(name, args):
+    with pytest.raises(ToolError, match="blank"):
+        _call(name, args)
+
+
+def test_suggest_mapping_rejects_empty_source_fields():
+    with pytest.raises(ToolError, match="must not be empty"):
+        _call("suggest_mapping", {"entity": "loan", "source_fields": []})
+
+
+def test_find_examples_rejects_limit_over_cap():
+    with pytest.raises(
+        ToolError, match=f"between 1 and {tools.MAX_FIND_EXAMPLES_LIMIT}"
+    ):
+        _call(
+            "find_examples",
+            {"query": "swap", "limit": tools.MAX_FIND_EXAMPLES_LIMIT + 1},
+        )
+
+
 def test_validate_batch_rejects_oversized_batch():
     records = [{"entity": "loan", "record": {}}] * (tools.MAX_BATCH_RECORDS + 1)
     with pytest.raises(ToolError, match="at most 1000 records"):
