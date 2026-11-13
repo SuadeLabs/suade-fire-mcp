@@ -56,7 +56,7 @@ def test_normalise_splits_camel_case_and_separators():
 def test_example_usage_breaks_name_similarity_ties():
     # By name alone, prod_type ranks provision_type first; the worked examples
     # set loan.type far more often, so type should win.
-    (top, *_) = search.suggest_mapping("loan", ["prod_type"])
+    top, *_ = search.suggest_mapping("loan", ["prod_type"])
     assert top.entity_field == "type"
     assert top.example_boost > 0
 

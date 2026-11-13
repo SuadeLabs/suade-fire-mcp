@@ -20,7 +20,6 @@ from pathlib import Path
 
 from . import repo
 
-
 # Every schema, doc and example file name in FIRE is a plain snake_case stem.
 _NAME_RE = re.compile(r"[A-Za-z0-9_]+")
 
