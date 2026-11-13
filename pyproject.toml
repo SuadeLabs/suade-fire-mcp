@@ -1,6 +1,6 @@
 [project]
 name = "suade-fire-mcp"
-version = "0.4.0"
+version = "0.5.0"
 description = "MCP server exposing the FIRE data standard for schema mapping"
 readme = "README.md"
 license = { text = "Apache-2.0" }
