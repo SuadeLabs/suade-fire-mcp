@@ -70,12 +70,6 @@ def test_list_fields_includes_allof_inherited_fields_for_customer():
     assert "annual_debit_turnover" in fields
 
 
-def test_list_examples_returns_title_and_comment():
-    summaries = {s.name: s for s in catalog.list_examples()}
-    assert "bond_future" in summaries
-    assert summaries["bond_future"].title
-
-
 def test_get_enum_definitions_reports_undocumented_values():
     result = catalog.get_enum_definitions("loan", "repayment_type")
     assert result.definitions

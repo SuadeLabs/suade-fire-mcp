@@ -69,13 +69,6 @@ class EnumDefinitions:
     undocumented_values: list[str]
 
 
-@dataclass
-class ExampleSummary:
-    name: str
-    title: str | None
-    comment: str | None
-
-
 @lru_cache(maxsize=None)
 def _known_entities() -> frozenset[str]:
     return frozenset(loader.list_schema_names()) - _EXCLUDED_ENTITIES
@@ -186,15 +179,3 @@ def get_enum_definitions(entity: str, field_name: str) -> EnumDefinitions:
         definitions=definitions,
         undocumented_values=undocumented,
     )
-
-
-def list_examples() -> list[ExampleSummary]:
-    summaries = []
-    for name in loader.list_example_names():
-        data = loader.load_example(name)
-        summaries.append(
-            ExampleSummary(
-                name=name, title=data.get("title"), comment=data.get("comment")
-            )
-        )
-    return summaries
