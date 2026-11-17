@@ -65,8 +65,12 @@ def complete(
     source = _COMPLETION_SOURCES.get((ref.uri, argument.name))
     if source is None:
         return Completion(values=[])
-    prefix = argument.value.lower()
-    matches = [name for name in source() if name.lower().startswith(prefix)]
+    return _prefix_completion(source(), argument.value)
+
+
+def _prefix_completion(names: list[str], typed: str) -> Completion:
+    prefix = typed.lower()
+    matches = [name for name in names if name.lower().startswith(prefix)]
     return Completion(
         values=matches[:_MAX_COMPLETIONS],
         total=len(matches),
@@ -83,6 +87,9 @@ def register(mcp: MCPServer) -> None:
     ) -> Completion | None:
         if isinstance(ref, ResourceTemplateReference):
             return complete(ref, argument)
+        if argument.name == "entity":
+            # Every prompt's entity argument (see prompts.py).
+            return _prefix_completion(catalog.known_entity_names(), argument.value)
         return None
 
     @_resource(mcp, "fire://schemas/{entity}")
