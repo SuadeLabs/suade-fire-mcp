@@ -11,19 +11,32 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any
+from typing import Any, Literal
 
 import jsonschema
 import jsonschema.exceptions
 
 from . import catalog, loader, refs
 
+IssueKind = Literal[
+    "missing_required",
+    "type_mismatch",
+    "enum_mismatch",
+    "format_mismatch",
+    "unknown_field",
+    "other",
+    # Only from validate_batch: an item that isn't {"entity", "record"}, or
+    # names an entity FIRE doesn't have.
+    "invalid_item",
+    "unknown_entity",
+]
+
 
 @dataclass
 class ValidationIssue:
     path: str
     message: str
-    kind: str
+    kind: IssueKind
     expected: Any = None
     got: Any = None
 
@@ -81,7 +94,7 @@ def _compact(value: Any) -> Any:
     return value
 
 
-def _issue_kind(error: jsonschema.exceptions.ValidationError) -> str:
+def _issue_kind(error: jsonschema.exceptions.ValidationError) -> IssueKind:
     if error.validator == "required":
         return "missing_required"
     if error.validator == "type":

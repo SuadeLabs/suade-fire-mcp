@@ -5,7 +5,7 @@
 
 import functools
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import dataclass
 from typing import Annotated, Any, TypeVar
 
 from mcp.server import MCPServer
@@ -51,23 +51,102 @@ MAPPING_BASIS = (
     "definition (get_field) before relying on it."
 )
 
-# Per-field keys returned by list_fields. The full field (enum values, doc excerpt)
-# is what get_field is for -- including it here puts the loan entity over the limit.
-_FIELD_SUMMARY_KEYS = (
-    "name",
-    "type",
-    "format",
-    "monetary",
-    "required",
-    "jurisdictions",
-    "description",
-)
+# --- Result types ------------------------------------------------------------
+#
+# Every tool returns an object (never a bare list) of a declared type, so its
+# output schema says exactly what comes back. A bare list would be wrapped by
+# the SDK in {"result": [...]}, and a dict[str, Any] return publishes no schema.
 
 
-def _field_summary(field: catalog.Field) -> dict[str, Any]:
-    summary = {key: getattr(field, key) for key in _FIELD_SUMMARY_KEYS}
-    summary["is_enum"] = field.enum is not None
-    return summary
+@dataclass
+class EntityList:
+    entities: list[catalog.Entity]
+
+
+@dataclass
+class FieldSummary:
+    """One field as list_fields returns it. Enum values and the doc excerpt are
+    left out -- get_field has them; including them puts loan over the limit."""
+
+    name: str
+    type: str | None
+    format: str | None
+    monetary: bool
+    required: bool
+    jurisdictions: list[str] | None
+    description: str | None
+    is_enum: bool
+
+
+@dataclass
+class FieldList:
+    entity: str
+    fields: list[FieldSummary]
+
+
+@dataclass
+class SearchResults:
+    results: list[search.SearchResult]
+
+
+@dataclass
+class ExampleMatches:
+    matches: list[examples.ExampleMatch]
+
+
+@dataclass
+class RecordValidation:
+    valid: bool
+    # Empty when valid.
+    issues: list[validation.ValidationIssue]
+
+
+@dataclass
+class RecordIssues:
+    index: int
+    entity: str
+    issues: list[validation.ValidationIssue]
+
+
+@dataclass
+class BatchValidation:
+    valid: bool
+    record_count: int
+    # Every issue found, including any not returned because of the cap.
+    issue_count: int
+    truncated: bool
+    # Only the records that have issues.
+    records: list[RecordIssues]
+    referential_issues: list[batch.ReferentialIssue]
+
+
+@dataclass
+class MappingSuggestion:
+    source_field: str
+    entity_field: str
+    score: float
+    reason: str
+    example_boost: float
+    example_evidence: examples.ExampleEvidence
+
+
+@dataclass
+class MappingSuggestions:
+    candidates: list[MappingSuggestion]
+    basis: str
+
+
+def _field_summary(field: catalog.Field) -> FieldSummary:
+    return FieldSummary(
+        name=field.name,
+        type=field.type,
+        format=field.format,
+        monetary=field.monetary,
+        required=field.required,
+        jurisdictions=field.jurisdictions,
+        description=field.description,
+        is_enum=field.enum is not None,
+    )
 
 
 def _ensure_not_blank(name: str, value: str) -> None:
@@ -139,12 +218,12 @@ def register(mcp: MCPServer) -> None:
     ]
 
     @_tool(mcp, "List FIRE entities")
-    def list_entities() -> list[dict[str, Any]]:
+    def list_entities() -> EntityList:
         """List all FIRE entities (top-level schemas) with a short description."""
-        return [asdict(entity) for entity in catalog.list_entities()]
+        return EntityList(entities=catalog.list_entities())
 
     @_tool(mcp, "List entity fields")
-    def list_fields(entity: Entity) -> list[dict[str, Any]]:
+    def list_fields(entity: Entity) -> FieldList:
         """List every field on a FIRE entity (including jurisdiction extensions and
         fields inherited via allOf) as a summary: name, type, format, monetary,
         required, jurisdictions, description and is_enum.
@@ -152,7 +231,10 @@ def register(mcp: MCPServer) -> None:
         Enum values and documentation excerpts are not included; get_field returns
         them for one field.
         """
-        return [_field_summary(field) for field in catalog.list_fields(entity)]
+        return FieldList(
+            entity=entity,
+            fields=[_field_summary(field) for field in catalog.list_fields(entity)],
+        )
 
     @_tool(mcp, "Search FIRE fields")
     def search_fields(
@@ -169,7 +251,7 @@ def register(mcp: MCPServer) -> None:
             int,
             Field(description=f"Maximum results to return (1-{MAX_SEARCH_LIMIT})."),
         ] = 10,
-    ) -> list[dict[str, Any]]:
+    ) -> SearchResults:
         """Search FIRE field names, descriptions and enum values across all
         entities.
 
@@ -182,37 +264,29 @@ def register(mcp: MCPServer) -> None:
             raise ValueError(
                 f"limit must be between 1 and {MAX_SEARCH_LIMIT}, got {limit}."
             )
-        return [asdict(result) for result in search.search_fields(query, limit=limit)]
+        return SearchResults(results=search.search_fields(query, limit=limit))
 
     @_tool(mcp, "Get field detail")
-    def get_field(entity: Entity, field: FieldName) -> dict[str, Any]:
+    def get_field(entity: Entity, field: FieldName) -> catalog.Field:
         """Get full detail (type, format, enum, monetary flag, description, doc,
         required flag) for one FIRE field.
 
-        If the field doesn't exist on this entity, returns a structured
-        {"error": "unknown_field", ...} payload naming any other entities it
-        does exist on, instead of raising.
+        If the field doesn't exist on this entity, the error names any other
+        entities it does exist on.
         """
-        try:
-            return asdict(catalog.get_field(entity, field))
-        except catalog.UnknownFieldError as exc:
-            return {
-                "error": "unknown_field",
-                "entity": exc.entity,
-                "field": exc.field_name,
-                "exists_on": exc.exists_on,
-                "message": str(exc),
-            }
+        return catalog.get_field(entity, field)
 
     @_tool(mcp, "Get enum definitions")
-    def get_enum_definitions(entity: Entity, field: FieldName) -> dict[str, Any]:
+    def get_enum_definitions(
+        entity: Entity, field: FieldName
+    ) -> catalog.EnumDefinitions:
         """Get the per-value prose definitions for an enum field on a FIRE entity,
         parsed from documentation/properties/<field>.md.
 
         Raises if the field doesn't exist, isn't an enum, or has no parseable
         per-value documentation.
         """
-        return asdict(catalog.get_enum_definitions(entity, field))
+        return catalog.get_enum_definitions(entity, field)
 
     @_tool(mcp, "Get worked examples")
     def get_examples(
@@ -225,11 +299,16 @@ def register(mcp: MCPServer) -> None:
                 )
             ),
         ] = None,
-    ) -> Any:
-        """List all worked FIRE example payloads (name/title/comment), or return
-        one example's full content by name."""
+    ) -> dict[str, Any]:
+        """List all worked FIRE example payloads as {"examples": [{name, title,
+        comment}]}, or return one example's full content by name."""
         if name is None:
-            return [asdict(summary) for summary in catalog.list_examples()]
+            return {
+                "examples": [
+                    {"name": e.name, "title": e.title, "comment": e.comment}
+                    for e in catalog.list_examples()
+                ]
+            }
         try:
             return loader.load_example(name)
         except FileNotFoundError as exc:
@@ -247,7 +326,7 @@ def register(mcp: MCPServer) -> None:
         ],
         jurisdiction: Jurisdiction = None,
         strict: Strict = False,
-    ) -> dict[str, Any]:
+    ) -> RecordValidation:
         """Validate a JSON record against a FIRE entity schema.
 
         Returns {"valid": bool, "issues": [...]}; issues is empty when valid. Each
@@ -255,13 +334,10 @@ def register(mcp: MCPServer) -> None:
         format_mismatch (a date-time field not in RFC 3339 form, e.g. missing the
         trailing Z), unknown_field (strict only) or other.
         """
-        # Wrapped in an object rather than returning the bare issue list: an empty
-        # list serialises to no content blocks at all, so a valid record would
-        # come back to the model as an empty result.
         issues = validation.validate_record(
             entity, record, jurisdiction=jurisdiction, strict=strict
         )
-        return {"valid": not issues, "issues": [asdict(issue) for issue in issues]}
+        return RecordValidation(valid=not issues, issues=issues)
 
     @_tool(mcp, "Validate batch")
     def validate_batch(
@@ -277,7 +353,7 @@ def register(mcp: MCPServer) -> None:
         ],
         jurisdiction: Jurisdiction = None,
         strict: Strict = False,
-    ) -> dict[str, Any]:
+    ) -> BatchValidation:
         """Validate a batch of records, each against its own entity schema, and
         check references between them.
 
@@ -291,11 +367,10 @@ def register(mcp: MCPServer) -> None:
         Cash-flow reconciliation and joint_customer_ids/joint_customer_structure
         length-matching are explicitly out of scope for this check.
 
-        Returns {"valid", "record_count", "issue_count", "truncated", "records",
-        "referential_issues"}. "records" lists only the records that have
-        issues; a malformed item or unknown entity is reported against that
-        item. At most 250 issues are returned per call -- "truncated" says
-        whether more were found, and "issue_count" is the full total.
+        "records" lists only the records that have issues; a malformed item or
+        unknown entity is reported against that item. At most 250 issues are
+        returned per call -- "truncated" says whether more were found, and
+        "issue_count" is the full total.
         """
         if len(records) > MAX_BATCH_RECORDS:
             raise ValueError(
@@ -315,24 +390,18 @@ def register(mcp: MCPServer) -> None:
             shown = r.issues[:budget]
             budget -= len(shown)
             records_out.append(
-                {
-                    "index": r.index,
-                    "entity": r.entity,
-                    "issues": [asdict(issue) for issue in shown],
-                }
+                RecordIssues(index=r.index, entity=r.entity, issues=shown)
             )
-        referential_out = [
-            asdict(issue) for issue in result.referential_issues[: max(budget, 0)]
-        ]
-        returned = sum(len(r["issues"]) for r in records_out) + len(referential_out)
-        return {
-            "valid": issue_count == 0,
-            "record_count": len(records),
-            "issue_count": issue_count,
-            "truncated": returned < issue_count,
-            "records": records_out,
-            "referential_issues": referential_out,
-        }
+        referential_out = result.referential_issues[: max(budget, 0)]
+        returned = sum(len(r.issues) for r in records_out) + len(referential_out)
+        return BatchValidation(
+            valid=issue_count == 0,
+            record_count=len(records),
+            issue_count=issue_count,
+            truncated=returned < issue_count,
+            records=records_out,
+            referential_issues=referential_out,
+        )
 
     @_tool(mcp, "Suggest field mapping")
     def suggest_mapping(
@@ -357,7 +426,7 @@ def register(mcp: MCPServer) -> None:
                 )
             ),
         ] = None,
-    ) -> dict[str, Any]:
+    ) -> MappingSuggestions:
         """Suggest FIRE field mappings for a list of internal/source field names.
 
         Ranked, non-authoritative candidates -- a starting point for a mapping
@@ -381,18 +450,20 @@ def register(mcp: MCPServer) -> None:
         candidates = search.suggest_mapping(
             entity, source_fields, sample_values=sample_values
         )
-        return {
-            "candidates": [
-                {
-                    **asdict(candidate),
-                    "example_evidence": examples.evidence_for(
-                        entity, candidate.entity_field
-                    ),
-                }
-                for candidate in candidates
+        return MappingSuggestions(
+            candidates=[
+                MappingSuggestion(
+                    source_field=c.source_field,
+                    entity_field=c.entity_field,
+                    score=c.score,
+                    reason=c.reason,
+                    example_boost=c.example_boost,
+                    example_evidence=examples.evidence_for(entity, c.entity_field),
+                )
+                for c in candidates
             ],
-            "basis": MAPPING_BASIS,
-        }
+            basis=MAPPING_BASIS,
+        )
 
     @_tool(mcp, "Find worked examples")
     def find_examples(
@@ -416,7 +487,7 @@ def register(mcp: MCPServer) -> None:
                 description=f"Maximum matches to return (1-{MAX_FIND_EXAMPLES_LIMIT})."
             ),
         ] = 5,
-    ) -> list[dict[str, Any]]:
+    ) -> ExampleMatches:
         """Find FIRE's worked example records for a product or trade type.
 
         Each match includes the example's description, the entities it contains,
@@ -428,7 +499,6 @@ def register(mcp: MCPServer) -> None:
             raise ValueError(
                 f"limit must be between 1 and {MAX_FIND_EXAMPLES_LIMIT}, got {limit}."
             )
-        return [
-            asdict(match)
-            for match in examples.find_examples(query, entity=entity, limit=limit)
-        ]
+        return ExampleMatches(
+            matches=examples.find_examples(query, entity=entity, limit=limit)
+        )

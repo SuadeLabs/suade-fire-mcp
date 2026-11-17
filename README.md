@@ -330,7 +330,7 @@ Clients that support completions can autocomplete each resource's `{entity}`, `{
 `{name}` part. Tool parameters list their valid values (entity names, jurisdictions) in their
 input schema.
 
-Tools (all read-only):
+Tools (all read-only). Each returns a JSON object and declares its shape as an output schema:
 - `list_entities` -- every FIRE entity with a short description
 - `list_fields(entity)` -- summary of every field on an entity, flagged required / enum
 - `search_fields(query, limit=10)` -- fuzzy search over field names, descriptions and enum

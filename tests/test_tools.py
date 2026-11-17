@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import anyio
+import jsonschema
 import pytest
 from mcp.server.mcpserver.exceptions import (
     ResourceError,
@@ -81,6 +82,64 @@ def test_jurisdiction_stays_case_insensitive():
     assert result.structured_content["valid"] is True
 
 
+# get_examples(name) returns a FIRE example payload as stored, so it is the one
+# tool whose output is an open object.
+_OPEN_OUTPUT = {"get_examples"}
+
+# One representative successful call per tool.
+_SAMPLE_CALLS = [
+    ("list_entities", {}),
+    ("list_fields", {"entity": "loan"}),
+    ("search_fields", {"query": "interest rate"}),
+    ("get_field", {"entity": "loan", "field": "repayment_type"}),
+    ("get_enum_definitions", {"entity": "loan", "field": "repayment_type"}),
+    ("get_examples", {}),
+    ("validate_record", {"entity": "loan", "record": {"id": "L1"}}),
+    (
+        "validate_batch",
+        {"records": [{"entity": "loan", "record": {"id": "L1", "customer_id": "C9"}}]},
+    ),
+    (
+        "suggest_mapping",
+        {
+            "entity": "loan",
+            "source_fields": ["cust_id", "repay_type"],
+            "sample_values": {"repay_type": "repayment"},
+        },
+    ),
+    ("find_examples", {"query": "buy to let mortgage"}),
+]
+
+
+def test_every_tool_publishes_a_typed_output_schema():
+    for tool in anyio.run(MCP.list_tools):
+        schema = tool.output_schema
+        assert schema and schema.get("type") == "object", tool.name
+        if tool.name in _OPEN_OUTPUT:
+            continue
+        assert schema.get("properties"), tool.name
+        assert "result" not in schema["properties"], f"{tool.name} returns a bare list"
+        assert schema.get("additionalProperties") is not True, tool.name
+
+
+def test_sample_calls_cover_every_tool():
+    names = {tool.name for tool in anyio.run(MCP.list_tools)}
+    assert {name for name, _ in _SAMPLE_CALLS} == names
+
+
+@pytest.mark.parametrize("name, args", _SAMPLE_CALLS)
+def test_results_match_their_output_schema(name, args):
+    schemas = {tool.name: tool.output_schema for tool in anyio.run(MCP.list_tools)}
+    result = _call(name, args)
+    jsonschema.validate(result.structured_content, schemas[name])
+    assert result.content, f"{name} returned no visible content"
+
+
+def test_unknown_field_error_names_the_entities_it_exists_on():
+    with pytest.raises(ToolError, match="It does exist on: .*security"):
+        _call("get_field", {"entity": "customer", "field": "issuer_id"})
+
+
 def test_anticipated_errors_reach_the_model_with_their_message():
     with pytest.raises(ToolError, match="Use list_entities") as info:
         _call("list_fields", {"entity": "not_an_entity"})
@@ -133,8 +192,9 @@ def test_validate_batch_rejects_oversized_batch():
 
 def test_list_fields_returns_summaries_within_result_size_limit():
     result = _call("list_fields", {"entity": "loan"})
-    fields = result.structured_content["result"]
-    assert set(fields[0]) == set(tools._FIELD_SUMMARY_KEYS) | {"is_enum"}
+    fields = result.structured_content["fields"]
+    assert set(fields[0]) == set(tools.FieldSummary.__dataclass_fields__)
+    assert "enum" not in fields[0] and "doc_excerpt" not in fields[0]
     # claude.ai caps tool results at ~150k characters; Claude Code at 25k tokens.
     assert sum(len(block.text) for block in result.content) < 100_000
 

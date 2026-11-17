@@ -15,9 +15,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any
 
 from rapidfuzz import fuzz
+
+# typing_extensions, not typing: Pydantic needs its TypedDict on Python < 3.12
+# to build the tool output schema.
+from typing_extensions import NotRequired, TypedDict
 
 from . import catalog, loader, refs
 from .text import normalise
@@ -33,6 +36,17 @@ class ExampleMatch:
     # ["mortgage"], "purpose": ["buy_to_let"]}} -- the part of a mapping that is
     # hardest to get right and most worth copying from a reviewed example.
     classification: dict[str, dict[str, list[str]]]
+
+
+class ExampleEvidence(TypedDict):
+    """How FIRE's worked examples use one field. A TypedDict rather than a
+    dataclass so absent keys stay absent: suggest_mapping returns up to 300 of
+    these, and nulls on every unused field would cost result space."""
+
+    used_in_examples: int
+    example_names: NotRequired[list[str]]
+    # Only for enum fields: every value the examples set it to.
+    example_values: NotRequired[list[str]]
 
 
 @dataclass
@@ -135,7 +149,9 @@ def find_examples(
     ]
 
 
-def evidence_for(entity: str, field_name: str, max_examples: int = 1) -> dict[str, Any]:
+def evidence_for(
+    entity: str, field_name: str, max_examples: int = 1
+) -> ExampleEvidence:
     """Compact example evidence for one candidate field, for suggest_mapping.
 
     One example name by default: it's a pointer for get_examples, and every
@@ -145,7 +161,7 @@ def evidence_for(entity: str, field_name: str, max_examples: int = 1) -> dict[st
     usage = field_usage().get((entity, field_name))
     if usage is None:
         return {"used_in_examples": 0}
-    evidence: dict[str, Any] = {
+    evidence: ExampleEvidence = {
         "used_in_examples": len(usage.examples),
         "example_names": usage.examples[:max_examples],
     }
