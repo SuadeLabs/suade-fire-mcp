@@ -9,6 +9,13 @@ from typing import Any
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ResourceError
+from mcp.types import (
+    Completion,
+    CompletionArgument,
+    CompletionContext,
+    PromptReference,
+    ResourceTemplateReference,
+)
 
 from . import catalog, docs, loader, refs
 
@@ -34,7 +41,50 @@ def _resource(mcp: MCPServer, uri: str) -> Callable[[Callable[..., str]], Any]:
     return decorator
 
 
+# The SDK caps a completion response at 100 values; more than that and the
+# client is told there are more, so the user keeps typing to narrow it down.
+_MAX_COMPLETIONS = 100
+
+# Which names each resource template's parameter takes, keyed by
+# (template URI, parameter name).
+_COMPLETION_SOURCES: dict[tuple[str, str], Callable[[], list[str]]] = {
+    ("fire://schemas/{entity}", "entity"): catalog.known_entity_names,
+    ("fire://extensions/{entity}", "entity"): lambda: [
+        name for name in loader.list_extension_names() if catalog.is_known_entity(name)
+    ],
+    ("fire://properties/{field}", "field"): loader.list_doc_names,
+    ("fire://examples/{name}", "name"): loader.list_example_names,
+}
+
+
+def complete(
+    ref: ResourceTemplateReference, argument: CompletionArgument
+) -> Completion:
+    """Names starting with what the user has typed so far, for one template
+    parameter. Unknown templates or parameters get no suggestions."""
+    source = _COMPLETION_SOURCES.get((ref.uri, argument.name))
+    if source is None:
+        return Completion(values=[])
+    prefix = argument.value.lower()
+    matches = [name for name in source() if name.lower().startswith(prefix)]
+    return Completion(
+        values=matches[:_MAX_COMPLETIONS],
+        total=len(matches),
+        has_more=len(matches) > _MAX_COMPLETIONS,
+    )
+
+
 def register(mcp: MCPServer) -> None:
+    @mcp.completion()
+    async def handle_completion(
+        ref: PromptReference | ResourceTemplateReference,
+        argument: CompletionArgument,
+        context: CompletionContext | None,
+    ) -> Completion | None:
+        if isinstance(ref, ResourceTemplateReference):
+            return complete(ref, argument)
+        return None
+
     @_resource(mcp, "fire://schemas/{entity}")
     def schema_resource(entity: str) -> str:
         """The FIRE schema for one entity, with all $refs resolved inline."""

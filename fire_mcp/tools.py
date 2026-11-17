@@ -1,17 +1,20 @@
 """Registers the FIRE mapping-assistant tools against an MCPServer instance."""
 
-from __future__ import annotations
+# No `from __future__ import annotations`: register() builds parameter types from
+# the FIRE checkout at runtime, and the SDK reads them from the live signature.
 
 import functools
 from collections.abc import Callable
 from dataclasses import asdict
-from typing import Any, TypeVar
+from typing import Annotated, Any, TypeVar
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from . import batch, catalog, examples, loader, search, validation
+from .validation import known_jurisdictions
 
 # Every tool only reads the local FIRE checkout -- nothing is written, and the same
 # arguments always give the same result. Claude uses these hints to decide whether a
@@ -97,14 +100,51 @@ def _tool(mcp: MCPServer, title: str) -> Callable[[_F], _F]:
     return decorator
 
 
+def _choice(description: str, values: list[str] | tuple[str, ...]) -> Any:
+    """A string parameter whose schema lists its valid values.
+
+    The enum is advertised in the schema only; the tool itself still checks the
+    value, so a wrong one gets this package's message (which names the tool to
+    call for valid values) instead of a bare schema-validation error.
+    """
+    return Annotated[
+        str, Field(description=description, json_schema_extra={"enum": list(values)})
+    ]
+
+
 def register(mcp: MCPServer) -> None:
+    entity_names = catalog.known_entity_names()
+    Entity = _choice("FIRE entity name, e.g. loan or customer.", entity_names)
+    Jurisdiction = Annotated[
+        _choice("Jurisdiction code.", known_jurisdictions()) | None,
+        Field(
+            description=(
+                "Also validate this jurisdiction's extension fields (e.g. US). "
+                "Omit to validate against the base schema only."
+            )
+        ),
+    ]
+    Strict = Annotated[
+        bool,
+        Field(
+            description=(
+                "Also flag record keys that aren't FIRE fields for the entity, as "
+                'kind="unknown_field". FIRE\'s schemas allow extra keys, so this '
+                "is the only way to catch misspelt field names."
+            )
+        ),
+    ]
+    FieldName = Annotated[
+        str, Field(description="FIRE field name, e.g. balance or repayment_type.")
+    ]
+
     @_tool(mcp, "List FIRE entities")
     def list_entities() -> list[dict[str, Any]]:
         """List all FIRE entities (top-level schemas) with a short description."""
         return [asdict(entity) for entity in catalog.list_entities()]
 
     @_tool(mcp, "List entity fields")
-    def list_fields(entity: str) -> list[dict[str, Any]]:
+    def list_fields(entity: Entity) -> list[dict[str, Any]]:
         """List every field on a FIRE entity (including jurisdiction extensions and
         fields inherited via allOf) as a summary: name, type, format, monetary,
         required, jurisdictions, description and is_enum.
@@ -115,13 +155,27 @@ def register(mcp: MCPServer) -> None:
         return [_field_summary(field) for field in catalog.list_fields(entity)]
 
     @_tool(mcp, "Search FIRE fields")
-    def search_fields(query: str, limit: int = 10) -> list[dict[str, Any]]:
-        """Search FIRE field names, descriptions and enum values for a query string.
+    def search_fields(
+        query: Annotated[
+            str,
+            Field(
+                description=(
+                    "Words to look for in field names, descriptions and enum "
+                    'values, e.g. "interest rate" or "buy_to_let".'
+                )
+            ),
+        ],
+        limit: Annotated[
+            int,
+            Field(description=f"Maximum results to return (1-{MAX_SEARCH_LIMIT})."),
+        ] = 10,
+    ) -> list[dict[str, Any]]:
+        """Search FIRE field names, descriptions and enum values across all
+        entities.
 
         One result per field: `entities` lists every entity the field appears on
         with that type and enum. A field whose enum differs by entity (e.g.
-        repayment_type on loan vs security) appears once per variant. Returns
-        at most 50 results.
+        repayment_type on loan vs security) appears once per variant.
         """
         _ensure_not_blank("query", query)
         if not 1 <= limit <= MAX_SEARCH_LIMIT:
@@ -131,7 +185,7 @@ def register(mcp: MCPServer) -> None:
         return [asdict(result) for result in search.search_fields(query, limit=limit)]
 
     @_tool(mcp, "Get field detail")
-    def get_field(entity: str, field: str) -> dict[str, Any]:
+    def get_field(entity: Entity, field: FieldName) -> dict[str, Any]:
         """Get full detail (type, format, enum, monetary flag, description, doc,
         required flag) for one FIRE field.
 
@@ -151,7 +205,7 @@ def register(mcp: MCPServer) -> None:
             }
 
     @_tool(mcp, "Get enum definitions")
-    def get_enum_definitions(entity: str, field: str) -> dict[str, Any]:
+    def get_enum_definitions(entity: Entity, field: FieldName) -> dict[str, Any]:
         """Get the per-value prose definitions for an enum field on a FIRE entity,
         parsed from documentation/properties/<field>.md.
 
@@ -161,7 +215,17 @@ def register(mcp: MCPServer) -> None:
         return asdict(catalog.get_enum_definitions(entity, field))
 
     @_tool(mcp, "Get worked examples")
-    def get_examples(name: str | None = None) -> Any:
+    def get_examples(
+        name: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Example name, as listed by calling this tool without it or by "
+                    "find_examples. Omit to list every example."
+                )
+            ),
+        ] = None,
+    ) -> Any:
         """List all worked FIRE example payloads (name/title/comment), or return
         one example's full content by name."""
         if name is None:
@@ -176,20 +240,15 @@ def register(mcp: MCPServer) -> None:
 
     @_tool(mcp, "Validate record")
     def validate_record(
-        entity: str,
-        record: dict[str, Any],
-        jurisdiction: str | None = None,
-        strict: bool = False,
+        entity: Entity,
+        record: Annotated[
+            dict[str, Any],
+            Field(description="The record to check, as a JSON object."),
+        ],
+        jurisdiction: Jurisdiction = None,
+        strict: Strict = False,
     ) -> dict[str, Any]:
         """Validate a JSON record against a FIRE entity schema.
-
-        With strict=True, also flags any record key that isn't a recognised FIRE
-        field for this entity (base schema, allOf-inherited fields, or any
-        jurisdiction extension) as kind="unknown_field" -- FIRE's own schemas set
-        additionalProperties: true, so this check is not otherwise enforced.
-
-        jurisdiction (e.g. "US") also validates that jurisdiction's extension
-        fields; an unknown jurisdiction is an error.
 
         Returns {"valid": bool, "issues": [...]}; issues is empty when valid. Each
         issue's kind is one of missing_required, type_mismatch, enum_mismatch,
@@ -206,11 +265,21 @@ def register(mcp: MCPServer) -> None:
 
     @_tool(mcp, "Validate batch")
     def validate_batch(
-        records: list[dict[str, Any]],
-        jurisdiction: str | None = None,
-        strict: bool = False,
+        records: Annotated[
+            list[dict[str, Any]],
+            Field(
+                description=(
+                    'Up to 1000 items, each {"entity": <entity name>, "record": '
+                    "<record object>}. Keep records that refer to each other in "
+                    "the same call: id references are only checked within it."
+                )
+            ),
+        ],
+        jurisdiction: Jurisdiction = None,
+        strict: Strict = False,
     ) -> dict[str, Any]:
-        """Validate a batch of {"entity": str, "record": dict} pairs.
+        """Validate a batch of records, each against its own entity schema, and
+        check references between them.
 
         Runs validate_record on each item, plus checks that *_id fields (e.g.
         customer_id, loan_id, guarantor_id, issuer_id, security_id,
@@ -227,8 +296,6 @@ def register(mcp: MCPServer) -> None:
         issues; a malformed item or unknown entity is reported against that
         item. At most 250 issues are returned per call -- "truncated" says
         whether more were found, and "issue_count" is the full total.
-
-        Accepts at most 1000 records per call.
         """
         if len(records) > MAX_BATCH_RECORDS:
             raise ValueError(
@@ -269,9 +336,27 @@ def register(mcp: MCPServer) -> None:
 
     @_tool(mcp, "Suggest field mapping")
     def suggest_mapping(
-        entity: str,
-        source_fields: list[str],
-        sample_values: dict[str, Any] | None = None,
+        entity: Annotated[
+            Entity, Field(description="The FIRE entity to map the source fields onto.")
+        ],
+        source_fields: Annotated[
+            list[str],
+            Field(
+                description=(
+                    "1-100 of your own field or column names, in any naming style "
+                    "(CustomerID, customer-id, cust_id)."
+                )
+            ),
+        ],
+        sample_values: Annotated[
+            dict[str, Any] | None,
+            Field(
+                description=(
+                    "Optional sample value per source field name. A value that is "
+                    "a FIRE enum value helps pick the right enum field."
+                )
+            ),
+        ] = None,
     ) -> dict[str, Any]:
         """Suggest FIRE field mappings for a list of internal/source field names.
 
@@ -280,8 +365,6 @@ def register(mcp: MCPServer) -> None:
         was matched, and `example_boost` how many of its score's points come from
         FIRE's worked examples using that field; the result's `basis` restates
         what the scores do and don't mean.
-
-        Accepts between 1 and 100 source fields per call.
         """
         if not source_fields:
             raise ValueError("source_fields must not be empty.")
@@ -313,16 +396,32 @@ def register(mcp: MCPServer) -> None:
 
     @_tool(mcp, "Find worked examples")
     def find_examples(
-        query: str, entity: str | None = None, limit: int = 5
+        query: Annotated[
+            str,
+            Field(
+                description=(
+                    'A product or trade type, e.g. "buy to let mortgage", '
+                    '"bridging loan" or "fx swap".'
+                )
+            ),
+        ],
+        entity: Annotated[
+            _choice("Only return examples containing this entity.", entity_names)
+            | None,
+            Field(description="Only return examples containing this entity."),
+        ] = None,
+        limit: Annotated[
+            int,
+            Field(
+                description=f"Maximum matches to return (1-{MAX_FIND_EXAMPLES_LIMIT})."
+            ),
+        ] = 5,
     ) -> list[dict[str, Any]]:
-        """Find FIRE's worked example records for a product or trade type, e.g.
-        "buy to let mortgage", "bridging loan" or "fx swap".
+        """Find FIRE's worked example records for a product or trade type.
 
         Each match includes the example's description, the entities it contains,
         and the classification (enum) values its records use -- such as loan type,
         purpose and repayment_type. Fetch the full records with get_examples(name).
-        Optionally restrict to examples containing one entity. Returns at most
-        20 matches.
         """
         _ensure_not_blank("query", query)
         if not 1 <= limit <= MAX_FIND_EXAMPLES_LIMIT:

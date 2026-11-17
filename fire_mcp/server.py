@@ -29,27 +29,37 @@ try:
 except PackageNotFoundError:  # running from a source tree without installing
     _VERSION = "0.0.0"
 
-mcp = MCPServer(
-    "fire",
-    title="FIRE data standard",
-    version=_VERSION,
-    website_url="https://github.com/SuadeLabs/suade-fire-mcp",
-    instructions=(
-        "Read-only reference for the FIRE (Financial Regulatory) data standard: "
-        "entity schemas, field definitions and enum values, worked examples, record "
-        "and batch validation, and suggested mappings from internal field names to "
-        "FIRE fields. Mapping suggestions are automated and non-authoritative; "
-        "schemas, field definitions and validation come directly from the published "
-        "FIRE standard."
-    ),
+INSTRUCTIONS = (
+    "Read-only reference for the FIRE (Financial Regulatory) data standard: "
+    "entity schemas, field definitions and enum values, worked examples, record "
+    "and batch validation, and suggested mappings from internal field names to "
+    "FIRE fields. Mapping suggestions are automated and non-authoritative; "
+    "schemas, field definitions and validation come directly from the published "
+    "FIRE standard."
 )
-resources.register(mcp)
-tools.register(mcp)
 
 
-@mcp.custom_route("/health", methods=["GET"])
 async def health(request: Request) -> Response:
     return JSONResponse({"status": "ok", "version": _VERSION})
+
+
+def create_server() -> MCPServer:
+    """Build the FIRE MCPServer.
+
+    Needs the FIRE checkout: tool input schemas list FIRE's entity and
+    jurisdiction names, so they are read while the tools are registered.
+    """
+    mcp = MCPServer(
+        "fire",
+        title="FIRE data standard",
+        version=_VERSION,
+        website_url="https://github.com/SuadeLabs/suade-fire-mcp",
+        instructions=INSTRUCTIONS,
+    )
+    resources.register(mcp)
+    tools.register(mcp)
+    mcp.custom_route("/health", methods=["GET"])(health)
+    return mcp
 
 
 def _split_env_list(name: str) -> list[str]:
@@ -63,7 +73,7 @@ def _split_env_list(name: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
-def _run_streamable_http() -> None:
+def _run_streamable_http(mcp: MCPServer) -> None:
     port = int(os.environ.get("PORT", "8000"))
     security = TransportSecuritySettings(
         allowed_hosts=_split_env_list("FIRE_MCP_ALLOWED_HOSTS"),
@@ -91,14 +101,15 @@ def main() -> None:
     except RuntimeError as exc:
         sys.exit(f"fire-mcp: {exc}")
     transport = os.environ.get("FIRE_MCP_TRANSPORT", "stdio")
-    if transport == "stdio":
-        mcp.run()
-    elif transport == "streamable-http":
-        _run_streamable_http()
-    else:
+    if transport not in ("stdio", "streamable-http"):
         raise RuntimeError(
             f"Unknown FIRE_MCP_TRANSPORT={transport!r}. Use 'stdio' or 'streamable-http'."
         )
+    mcp = create_server()
+    if transport == "stdio":
+        mcp.run()
+    else:
+        _run_streamable_http(mcp)
 
 
 if __name__ == "__main__":

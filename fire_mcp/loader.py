@@ -91,5 +91,9 @@ def list_extension_names() -> list[str]:
     return sorted(p.stem for p in repo.extension_schemas_dir().glob("*.json"))
 
 
+def list_doc_names() -> list[str]:
+    return sorted(p.stem for p in repo.docs_dir().glob("*.md"))
+
+
 def list_example_names() -> list[str]:
     return sorted(p.stem for p in repo.examples_dir().glob("*.json"))
