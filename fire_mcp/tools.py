@@ -13,7 +13,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from . import batch, catalog, examples, loader, search, validation
+from . import batch, catalog, docs, examples, loader, search, validation
 from .validation import known_jurisdictions
 
 # Every tool only reads the local FIRE checkout -- nothing is written, and the same
@@ -76,6 +76,14 @@ class FieldSummary:
     jurisdictions: list[str] | None
     description: str | None
     is_enum: bool
+
+
+@dataclass
+class FieldDetail(catalog.Field):
+    # Only filled in with include_enum_definitions=True on an enum field: value
+    # -> definition, plus the values FIRE's docs don't define.
+    enum_definitions: dict[str, str] | None = None
+    undocumented_enum_values: list[str] | None = None
 
 
 @dataclass
@@ -267,54 +275,57 @@ def register(mcp: MCPServer) -> None:
         return SearchResults(results=search.search_fields(query, limit=limit))
 
     @_tool(mcp, "Get field detail")
-    def get_field(entity: Entity, field: FieldName) -> catalog.Field:
-        """Get full detail (type, format, enum, monetary flag, description, doc,
-        required flag) for one FIRE field.
+    def get_field(
+        entity: Entity,
+        field: FieldName,
+        include_enum_definitions: Annotated[
+            bool,
+            Field(
+                description=(
+                    "For an enum field, also return the prose definition of each "
+                    "value. Can be long (tens of thousands of characters for "
+                    "fields like type or purpose), so ask only when choosing "
+                    "between values."
+                )
+            ),
+        ] = False,
+    ) -> FieldDetail:
+        """Get full detail (type, format, enum values, monetary flag, description,
+        doc excerpt, required flag) for one FIRE field.
 
         If the field doesn't exist on this entity, the error names any other
         entities it does exist on.
         """
-        return catalog.get_field(entity, field)
+        detail = FieldDetail(**vars(catalog.get_field(entity, field)))
+        if include_enum_definitions and detail.enum:
+            try:
+                defs = catalog.get_enum_definitions(entity, field)
+            except docs.EnumDocsNotFoundError:
+                # The field is an enum but FIRE's doc has no per-value sections
+                # for this entity: report every value as undocumented rather than
+                # failing the whole lookup.
+                detail.enum_definitions = {}
+                detail.undocumented_enum_values = list(detail.enum)
+            else:
+                detail.enum_definitions = defs.definitions
+                detail.undocumented_enum_values = defs.undocumented_values
+        return detail
 
-    @_tool(mcp, "Get enum definitions")
-    def get_enum_definitions(
-        entity: Entity, field: FieldName
-    ) -> catalog.EnumDefinitions:
-        """Get the per-value prose definitions for an enum field on a FIRE entity,
-        parsed from documentation/properties/<field>.md.
-
-        Raises if the field doesn't exist, isn't an enum, or has no parseable
-        per-value documentation.
-        """
-        return catalog.get_enum_definitions(entity, field)
-
-    @_tool(mcp, "Get worked examples")
-    def get_examples(
+    @_tool(mcp, "Get worked example")
+    def get_example(
         name: Annotated[
-            str | None,
-            Field(
-                description=(
-                    "Example name, as listed by calling this tool without it or by "
-                    "find_examples. Omit to list every example."
-                )
-            ),
-        ] = None,
+            str,
+            Field(description="Example name, as returned by find_examples."),
+        ],
     ) -> dict[str, Any]:
-        """List all worked FIRE example payloads as {"examples": [{name, title,
-        comment}]}, or return one example's full content by name."""
-        if name is None:
-            return {
-                "examples": [
-                    {"name": e.name, "title": e.title, "comment": e.comment}
-                    for e in catalog.list_examples()
-                ]
-            }
+        """Get one worked FIRE example payload in full, as stored in FIRE's
+        examples/ directory: its title, comment and data (records keyed by
+        entity name)."""
         try:
             return loader.load_example(name)
         except FileNotFoundError as exc:
             raise ValueError(
-                f"No example named {name!r}. Call get_examples() with no arguments "
-                "to list available names."
+                f"No example named {name!r}. Use find_examples to look up names."
             ) from exc
 
     @_tool(mcp, "Validate record")
@@ -489,10 +500,13 @@ def register(mcp: MCPServer) -> None:
         ] = 5,
     ) -> ExampleMatches:
         """Find FIRE's worked example records for a product or trade type.
+        Results are ranked by how well the query matches each example's name
+        and description; a broad query with `entity` set browses the examples
+        that contain that entity.
 
         Each match includes the example's description, the entities it contains,
         and the classification (enum) values its records use -- such as loan type,
-        purpose and repayment_type. Fetch the full records with get_examples(name).
+        purpose and repayment_type. Fetch the full records with get_example(name).
         """
         _ensure_not_blank("query", query)
         if not 1 <= limit <= MAX_FIND_EXAMPLES_LIMIT:

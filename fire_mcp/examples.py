@@ -154,7 +154,7 @@ def evidence_for(
 ) -> ExampleEvidence:
     """Compact example evidence for one candidate field, for suggest_mapping.
 
-    One example name by default: it's a pointer for get_examples, and every
+    One example name by default: it's a pointer for get_example, and every
     extra name costs ~45 characters on each of up to 300 candidates per call.
     find_examples lists the rest.
     """

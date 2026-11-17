@@ -27,7 +27,7 @@ def _properties():
 
 def test_every_tool_has_a_title_and_read_only_annotations():
     listed = anyio.run(MCP.list_tools)
-    assert len(listed) == 10
+    assert len(listed) == 9
     for tool in listed:
         assert tool.title, tool.name
         assert len(tool.name) <= 64
@@ -82,18 +82,24 @@ def test_jurisdiction_stays_case_insensitive():
     assert result.structured_content["valid"] is True
 
 
-# get_examples(name) returns a FIRE example payload as stored, so it is the one
-# tool whose output is an open object.
-_OPEN_OUTPUT = {"get_examples"}
+# get_example returns a FIRE example payload as stored, so it is the one tool
+# whose output is an open object.
+_OPEN_OUTPUT = {"get_example"}
 
 # One representative successful call per tool.
 _SAMPLE_CALLS = [
     ("list_entities", {}),
     ("list_fields", {"entity": "loan"}),
     ("search_fields", {"query": "interest rate"}),
-    ("get_field", {"entity": "loan", "field": "repayment_type"}),
-    ("get_enum_definitions", {"entity": "loan", "field": "repayment_type"}),
-    ("get_examples", {}),
+    (
+        "get_field",
+        {
+            "entity": "loan",
+            "field": "repayment_type",
+            "include_enum_definitions": True,
+        },
+    ),
+    ("get_example", {"name": "bond_future"}),
     ("validate_record", {"entity": "loan", "record": {"id": "L1"}}),
     (
         "validate_batch",
@@ -221,9 +227,44 @@ def test_suggest_mapping_carries_its_basis_with_the_candidates():
 
 
 @pytest.mark.parametrize("name", ["../schemas/loan", "/etc/hostname", "bond_future/.."])
-def test_get_examples_rejects_names_that_are_paths(name):
+def test_get_example_rejects_names_that_are_paths(name):
     with pytest.raises(ToolError, match="No example named"):
-        _call("get_examples", {"name": name})
+        _call("get_example", {"name": name})
+
+
+def test_get_field_leaves_out_enum_definitions_unless_asked():
+    args = {"entity": "loan", "field": "repayment_type"}
+    plain = _call("get_field", args).structured_content
+    assert plain["enum"] and plain["enum_definitions"] is None
+    detailed = _call(
+        "get_field", {**args, "include_enum_definitions": True}
+    ).structured_content
+    assert set(detailed["enum_definitions"]) <= set(detailed["enum"])
+    assert set(detailed["enum_definitions"]) | set(
+        detailed["undocumented_enum_values"]
+    ) == set(detailed["enum"])
+
+
+def test_get_field_enum_definitions_on_non_enum_field_is_a_no_op():
+    result = _call(
+        "get_field",
+        {"entity": "loan", "field": "id", "include_enum_definitions": True},
+    ).structured_content
+    assert result["enum"] is None and result["enum_definitions"] is None
+
+
+def test_get_field_reports_values_undocumented_when_docs_have_no_sections():
+    # currency_code is an enum of ISO codes with no per-value doc sections.
+    result = _call(
+        "get_field",
+        {
+            "entity": "account",
+            "field": "currency_code",
+            "include_enum_definitions": True,
+        },
+    ).structured_content
+    assert result["enum_definitions"] == {}
+    assert result["undocumented_enum_values"] == result["enum"]
 
 
 def test_validate_batch_lists_only_records_with_issues():
