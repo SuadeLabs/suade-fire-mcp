@@ -358,6 +358,13 @@ Tools (all read-only). Each returns a JSON object and declares its shape as an o
   include a small boost (up to 8 points, reported as `example_boost`) for fields the worked
   examples use
 
+Prompts (workflows you start from your client's prompt or slash-command menu):
+- `map_source_schema(entity, source_fields)` -- paste your field names or a header row; the
+  assistant builds a mapping table, checks each suggestion against the FIRE definitions and
+  lists unmapped required fields
+- `explain_validation_failure(entity, record)` -- paste a failing record; the assistant
+  explains each issue, fixes it and re-validates
+
 ## Disclaimer
 
 This is an open-source, AI-assisted tool, provided as-is under the Apache 2.0 license, with no

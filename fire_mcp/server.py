@@ -16,7 +16,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from . import repo, resources, tools
+from . import prompts, repo, resources, tools
 
 # The SDK rejects request bodies over 4 MiB by default, which a full
 # validate_batch call (tools.MAX_BATCH_RECORDS records) of wide records can
@@ -29,14 +29,25 @@ try:
 except PackageNotFoundError:  # running from a source tree without installing
     _VERSION = "0.0.0"
 
-INSTRUCTIONS = (
-    "Read-only reference for the FIRE (Financial Regulatory) data standard: "
-    "entity schemas, field definitions and enum values, worked examples, record "
-    "and batch validation, and suggested mappings from internal field names to "
-    "FIRE fields. Mapping suggestions are automated and non-authoritative; "
-    "schemas, field definitions and validation come directly from the published "
-    "FIRE standard."
-)
+INSTRUCTIONS = """\
+Read-only reference for the FIRE (Financial Regulatory) data standard: entity \
+schemas, field definitions and enum values, worked examples, record and batch \
+validation, and suggested mappings from internal field names to FIRE fields.
+
+Typical order of use when mapping data onto FIRE:
+- find_examples: how FIRE's reviewed examples represent a product type, with \
+the enum values they use.
+- list_fields / search_fields: what an entity holds, or where a concept lives.
+- suggest_mapping: candidate FIRE fields for your own field names. These are \
+automated name matches, not authoritative; confirm each with get_field \
+(include_enum_definitions=true for enum fields) before relying on it.
+- validate_record / validate_batch: check draft records. Use strict=true to \
+catch misspelt field names. validate_batch only resolves *_id references \
+within the same call, so keep related records together.
+
+Schemas, field definitions and validation come directly from the published \
+FIRE standard.
+"""
 
 
 async def health(request: Request) -> Response:
@@ -58,6 +69,7 @@ def create_server() -> MCPServer:
     )
     resources.register(mcp)
     tools.register(mcp)
+    prompts.register(mcp)
     mcp.custom_route("/health", methods=["GET"])(health)
     return mcp
 
