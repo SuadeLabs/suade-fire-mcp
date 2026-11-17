@@ -6,3 +6,6 @@ __pycache__/
 .ruff_cache/
 build/
 dist/
+
+# Built by scripts/vendor_fire.py for release wheels; never committed.
+fire_mcp/_fire/

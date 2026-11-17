@@ -1,10 +1,14 @@
-"""Locates a FIRE (SuadeLabs/fire) checkout on disk so the rest of the package can read
+"""Locates the FIRE (SuadeLabs/fire) data on disk so the rest of the package can read
 schemas, extensions, documentation and examples without ever making a network call.
 
-This package and FIRE are separate repos, so FIRE_REPO_ROOT is the required way to point
-at a checkout. The walk-up-from-__file__ fallback below only helps if this package happens
-to be installed from inside a FIRE clone (e.g. local development against a vendored copy);
-it is not the supported path.
+In order:
+1. FIRE_REPO_ROOT, if set -- a FIRE checkout of the user's choosing (a different or
+   modified release). Always wins, so it can override the bundled copy.
+2. The copy bundled into released wheels at fire_mcp/_fire/, pinned to the FIRE
+   release the Dockerfile names (see scripts/vendor_fire.py). A source checkout or
+   a git install doesn't have it.
+3. A FIRE checkout above this package (only when installed from inside a FIRE
+   clone; not a supported path).
 
 The checkout is located on first use rather than at import, so a missing or wrong
 FIRE_REPO_ROOT surfaces as a one-line error from server.main() instead of a traceback
@@ -15,6 +19,8 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+
+BUNDLED_ROOT = Path(__file__).resolve().parent / "_fire"
 
 
 def _looks_like_fire_repo(path: Path) -> bool:
@@ -32,15 +38,19 @@ def _find_repo_root() -> Path:
             )
         return path
 
+    if _looks_like_fire_repo(BUNDLED_ROOT):
+        return BUNDLED_ROOT
+
     here = Path(__file__).resolve()
     for candidate in (here, *here.parents):
         if _looks_like_fire_repo(candidate):
             return candidate
 
     raise RuntimeError(
-        "FIRE_REPO_ROOT is not set. Clone https://github.com/SuadeLabs/fire and point "
-        "FIRE_REPO_ROOT at it -- there is no FIRE checkout to read schemas, docs or "
-        "examples from otherwise."
+        "FIRE_REPO_ROOT is not set and this install has no bundled FIRE data (only "
+        "released packages from PyPI include it). Install with `pip install "
+        "suade-fire-mcp`, or clone https://github.com/SuadeLabs/fire and point "
+        "FIRE_REPO_ROOT at it."
     )
 
 

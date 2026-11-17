@@ -7,3 +7,6 @@ __pycache__/
 .ruff_cache/
 build/
 dist/
+
+# The image clones FIRE itself (ARG FIRE_VERSION); keep a local vendored copy out.
+fire_mcp/_fire/

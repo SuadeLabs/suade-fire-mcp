@@ -92,3 +92,41 @@ jobs:
         env:
           FIRE_REPO_ROOT: ${{ github.workspace }}/fire
         run: pytest tests -v
+
+  # Build the release artefacts the way the release workflow does (FIRE vendored
+  # in from the pinned tag), install the wheel into a clean environment and check
+  # it serves from the bundled data. Catches packaging mistakes before a tag.
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: suade-fire-mcp
+
+      - name: Read pinned FIRE version
+        id: fire
+        working-directory: suade-fire-mcp
+        run: echo "version=$(sed -n 's/^ARG FIRE_VERSION=//p' Dockerfile)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: SuadeLabs/fire
+          ref: ${{ steps.fire.outputs.version }}
+          path: fire
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
+
+      - name: Vendor FIRE and build
+        working-directory: suade-fire-mcp
+        run: |
+          python scripts/vendor_fire.py ../fire --version "${{ steps.fire.outputs.version }}"
+          pip install "build>=1.2"
+          python -m build --outdir ../dist
+
+      - name: Install the wheel into a clean environment and smoke-test it
+        run: |
+          python -m venv wheel-venv
+          wheel-venv/bin/pip install dist/*.whl
+          wheel-venv/bin/python -I suade-fire-mcp/scripts/check_wheel.py

@@ -3,13 +3,14 @@ name = "suade-fire-mcp"
 version = "0.5.0"
 description = "MCP server exposing the FIRE data standard for schema mapping"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+# FIRE's own LICENSE ships inside the package, next to the bundled data.
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Financial and Insurance Industry",
-    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -36,6 +37,7 @@ dev = [
     # Pinned so local runs and CI lint identically.
     "ruff==0.17.4",
     "black==26.10.1",
+    "build>=1.2",
 ]
 
 [project.urls]
@@ -45,13 +47,20 @@ Issues = "https://github.com/SuadeLabs/suade-fire-mcp/issues"
 
 [project.scripts]
 fire-mcp = "fire_mcp.server:main"
+# Same entry point under the package name, so `uvx suade-fire-mcp` works.
+suade-fire-mcp = "fire_mcp.server:main"
 
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["fire_mcp*"]
+
+# The FIRE data vendored by scripts/vendor_fire.py before a release build. Absent
+# in a plain source checkout, so a git install still needs FIRE_REPO_ROOT.
+[tool.setuptools.package-data]
+fire_mcp = ["_fire/**/*"]
 
 [tool.ruff]
 line-length = 88

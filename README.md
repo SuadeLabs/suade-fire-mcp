@@ -1,14 +1,17 @@
 # suade-fire-mcp
 
+<!-- mcp-name: io.github.suadelabs/suade-fire-mcp -->
+
 An [MCP](https://modelcontextprotocol.io) server that exposes the [FIRE data
 standard](https://github.com/SuadeLabs/fire) so a data engineering team's own AI assistant can
 look up fields, validate draft records, and get mapping suggestions while mapping an internal
 data format onto FIRE.
 
 It works with any MCP client -- Claude, ChatGPT, Cursor, VS Code / GitHub Copilot, Windsurf,
-Gemini CLI, OpenAI Codex and others. It reads a [`SuadeLabs/fire`](https://github.com/SuadeLabs/fire)
-checkout's `schemas/`, `extensions/`, `documentation/` and `examples/` directly from disk at
-runtime -- no build step, no network access.
+Gemini CLI, OpenAI Codex and others. It reads FIRE's `schemas/`, `extensions/`,
+`documentation/` and `examples/` from disk at runtime -- no network access. Released packages
+bundle these files from a pinned FIRE release; you can point it at your own
+[`SuadeLabs/fire`](https://github.com/SuadeLabs/fire) checkout instead.
 
 ## 1. Choose how to run it
 
@@ -17,11 +20,37 @@ There are three ways to run the server. Pick one, then follow
 
 | Option | Needs | Best for |
 | --- | --- | --- |
-| **A. Docker** | Docker, and for now a SuadeLabs GitHub login (see below) | Most people, once the image is public. FIRE is built into the image, pinned to a release tag, so you don't clone anything. |
-| **B. Python** | Python 3.10+, a FIRE clone | Anyone outside SuadeLabs today; people without Docker; or anyone who wants a different or modified FIRE version. |
+| **A. Python (uv)** | [uv](https://docs.astral.sh/uv/) | Most people. One command, nothing to clone: FIRE is bundled, pinned to a release tag. |
+| **B. Docker** | Docker, and for now a SuadeLabs GitHub login (see below) | People who prefer containers, once the image is public. FIRE is built into the image too. |
 | **C. Remote URL** | A hosted instance ([Hosting](#hosting-a-shared-instance)) | Chat apps that only accept a URL (claude.ai, ChatGPT), or sharing one instance with a team. |
 
-### A. Docker
+### A. Python (uv)
+
+The client starts the server itself. Use this command:
+
+- **command:** `uvx`
+- **args:** `["suade-fire-mcp"]`
+
+`uvx` downloads the package from PyPI on first run and caches it. The package includes the
+FIRE data from the release it was built against, so no FIRE clone or environment variable is
+needed.
+
+> **Use absolute paths if the client can't find `uvx`.** Desktop apps (Claude Desktop,
+> Cursor, VS Code, Windsurf) don't inherit your shell's `PATH`. If you see "command not found"
+> or "spawn ENOENT", use the full path from `which uvx` (e.g. `/home/you/.local/bin/uvx`).
+
+Without uv, `pip install suade-fire-mcp` into a virtualenv and use the absolute path of its
+`fire-mcp` script as the command.
+
+**A different or modified FIRE version.** Clone FIRE (pin a release tag unless you want
+whatever `master` holds) and set `FIRE_REPO_ROOT` in the client's `env` to its absolute path.
+`FIRE_REPO_ROOT` always takes precedence over the bundled copy:
+
+```bash
+git clone --branch v26.10 https://github.com/SuadeLabs/fire.git
+```
+
+### B. Docker
 
 The client starts the container itself and talks to it over stdin/stdout. You don't run it
 yourself; just check that Docker can pull the image:
@@ -33,7 +62,7 @@ docker pull ghcr.io/suadelabs/suade-fire-mcp:latest
 > **The image is currently private.** Until a SuadeLabs org admin makes the package public, an
 > anonymous pull is denied. SuadeLabs members can
 > `docker login ghcr.io` with a GitHub personal access token that has `read:packages`;
-> everyone else should use option B for now.
+> everyone else should use option A.
 
 To run it, the client uses this command:
 
@@ -43,36 +72,6 @@ docker run -i --rm -e FIRE_MCP_TRANSPORT=stdio ghcr.io/suadelabs/suade-fire-mcp:
 
 `-i` is required because the client talks to the server over stdin. `FIRE_MCP_TRANSPORT=stdio`
 overrides the image's default, which is the HTTP transport.
-
-### B. Python
-
-The server and FIRE are separate repos. Clone both, and pin FIRE to a release tag unless you
-want whatever `master` holds right now:
-
-```bash
-git clone --branch v26.10 https://github.com/SuadeLabs/fire.git
-git clone https://github.com/SuadeLabs/suade-fire-mcp.git
-cd suade-fire-mcp
-python -m venv .venv && . .venv/bin/activate
-pip install .
-which fire-mcp   # note this absolute path -- you'll put it in your client config
-```
-
-`FIRE_REPO_ROOT` is required. It must point at the FIRE clone.
-
-The client starts the server with:
-
-- **command:** the absolute path from `which fire-mcp`, e.g. `/home/you/suade-fire-mcp/.venv/bin/fire-mcp`
-- **env:** `FIRE_REPO_ROOT=/absolute/path/to/fire`
-
-> **Use absolute paths.** Desktop apps (Claude Desktop, Cursor, VS Code, Windsurf) don't
-> inherit your shell's `PATH` or activated virtualenv. A bare `fire-mcp` command, or a `~` in
-> a path, usually fails with "command not found" or "spawn ENOENT".
-
-With [uv](https://docs.astral.sh/uv/) you don't need a clone or virtualenv for the server.
-Use `uvx` as the command and
-`["--from", "git+https://github.com/SuadeLabs/suade-fire-mcp", "fire-mcp"]` as the args. You
-still need the FIRE clone and `FIRE_REPO_ROOT`.
 
 ### C. Remote URL
 
@@ -84,10 +83,9 @@ To run your own instance, see [Hosting a shared instance](#hosting-a-shared-inst
 
 ## 2. Connect your client
 
-The snippets below use **option A (Docker)** for local servers. For **option B (Python)**,
-replace `command`/`args` with the absolute `fire-mcp` path and an empty args list, and add an
-`env` block, as shown under [Claude Desktop](#claude-desktop). For **option C**, use the
-"Remote" snippet for your client.
+The snippets below use **option A (uv)** for local servers. For **option B (Docker)**,
+replace `command`/`args` with the Docker command, as shown under
+[Claude Desktop](#claude-desktop). For **option C**, use the "Remote" snippet for your client.
 
 Where a client has a project-level config file, it's noted. Commit that file to share the
 setup with your team.
@@ -102,6 +100,20 @@ restart the app.
 {
   "mcpServers": {
     "fire": {
+      "command": "uvx",
+      "args": ["suade-fire-mcp"]
+    }
+  }
+}
+```
+
+Option B (Docker) looks like this. The same `command` + `args` shape works in every client
+below:
+
+```json
+{
+  "mcpServers": {
+    "fire": {
       "command": "docker",
       "args": ["run", "-i", "--rm", "-e", "FIRE_MCP_TRANSPORT=stdio",
                "ghcr.io/suadelabs/suade-fire-mcp:latest"]
@@ -110,19 +122,8 @@ restart the app.
 }
 ```
 
-Option B (Python) looks like this. The same `command` + `env` shape works in every client
-below:
-
-```json
-{
-  "mcpServers": {
-    "fire": {
-      "command": "/absolute/path/to/suade-fire-mcp/.venv/bin/fire-mcp",
-      "env": { "FIRE_REPO_ROOT": "/absolute/path/to/fire" }
-    }
-  }
-}
-```
+To use your own FIRE checkout with option A, add
+`"env": { "FIRE_REPO_ROOT": "/absolute/path/to/fire" }`.
 
 **Remote:** Settings -> Connectors -> Add custom connector, and enter the URL.
 
@@ -135,11 +136,11 @@ the whole organization.
 ### Claude Code
 
 ```bash
+# Local (uv)
+claude mcp add fire -- uvx suade-fire-mcp
+
 # Local (Docker)
 claude mcp add fire -- docker run -i --rm -e FIRE_MCP_TRANSPORT=stdio ghcr.io/suadelabs/suade-fire-mcp:latest
-
-# Local (Python)
-claude mcp add fire -e FIRE_REPO_ROOT=/absolute/path/to/fire -- /absolute/path/to/fire-mcp
 
 # Remote
 claude mcp add --transport http fire https://<your-host>/mcp
@@ -162,9 +163,8 @@ Edit `~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project:
 {
   "mcpServers": {
     "fire": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "-e", "FIRE_MCP_TRANSPORT=stdio",
-               "ghcr.io/suadelabs/suade-fire-mcp:latest"]
+      "command": "uvx",
+      "args": ["suade-fire-mcp"]
     }
   }
 }
@@ -183,9 +183,8 @@ needs a `type`:
   "servers": {
     "fire": {
       "type": "stdio",
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "-e", "FIRE_MCP_TRANSPORT=stdio",
-               "ghcr.io/suadelabs/suade-fire-mcp:latest"]
+      "command": "uvx",
+      "args": ["suade-fire-mcp"]
     }
   }
 }
@@ -214,12 +213,12 @@ Edit `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.fire]
-command = "docker"
-args = ["run", "-i", "--rm", "-e", "FIRE_MCP_TRANSPORT=stdio", "ghcr.io/suadelabs/suade-fire-mcp:latest"]
+command = "uvx"
+args = ["suade-fire-mcp"]
 
-# Option B (Python) instead:
-# command = "/absolute/path/to/fire-mcp"
-# env = { FIRE_REPO_ROOT = "/absolute/path/to/fire" }
+# Option B (Docker) instead:
+# command = "docker"
+# args = ["run", "-i", "--rm", "-e", "FIRE_MCP_TRANSPORT=stdio", "ghcr.io/suadelabs/suade-fire-mcp:latest"]
 ```
 
 **Remote:** `url = "https://<your-host>/mcp"` in place of `command`/`args`.
@@ -242,10 +241,12 @@ If a client only supports stdio but you want to use a remote instance, run it th
 Ask your assistant to *"list the FIRE entities"*. It should call `list_entities` and return
 `loan`, `account`, `customer`, and so on. If the tools don't appear:
 
-- **"spawn ENOENT" / "command not found":** use an absolute path to `fire-mcp` or `docker`
-  (see option B).
-- **`FIRE_REPO_ROOT is not set` / `does not look like a FIRE repo`:** set `env` to the
-  absolute path of the FIRE clone. That directory contains `schemas/` and `documentation/`.
+- **"spawn ENOENT" / "command not found":** use an absolute path to `uvx` or `docker`
+  (see option A).
+- **`no bundled FIRE data` / `does not look like a FIRE repo`:** you installed from git or a
+  source checkout, which doesn't include FIRE. Install from PyPI (`uvx suade-fire-mcp`), or set
+  `FIRE_REPO_ROOT` in `env` to the absolute path of a FIRE clone (the directory containing
+  `schemas/` and `documentation/`).
 - **The server starts, then exits immediately under Docker:** check that `-i` is in `args`.
 - **`421 Misdirected Request` from a remote URL:** the host's `FIRE_MCP_ALLOWED_HOSTS` doesn't
   include the hostname you're using (see below). The match is exact and includes any port, so
@@ -254,7 +255,7 @@ Ask your assistant to *"list the FIRE entities"*. It should call `list_entities`
 
 To test the server without an assistant, use the
 [MCP Inspector](https://github.com/modelcontextprotocol/inspector):
-`npx @modelcontextprotocol/inspector docker run -i --rm -e FIRE_MCP_TRANSPORT=stdio ghcr.io/suadelabs/suade-fire-mcp:latest`.
+`npx @modelcontextprotocol/inspector uvx suade-fire-mcp`.
 
 ## Hosting a shared instance
 
@@ -316,6 +317,14 @@ pip install -e ".[dev]"   # includes the pinned ruff and black versions CI uses
 export FIRE_REPO_ROOT=/absolute/path/to/fire
 pytest
 ruff check . && black --check .
+```
+
+A source checkout has no bundled FIRE data, so `FIRE_REPO_ROOT` is required. To build a release
+wheel locally, vendor the pinned FIRE release first:
+
+```bash
+python scripts/vendor_fire.py /absolute/path/to/fire --version v26.10
+python -m build
 ```
 
 ## What it exposes
