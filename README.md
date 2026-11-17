@@ -2,397 +2,121 @@
 
 <!-- mcp-name: io.github.suadelabs/suade-fire-mcp -->
 
-An [MCP](https://modelcontextprotocol.io) server that exposes the [FIRE data
-standard](https://github.com/SuadeLabs/fire) so a data engineering team's own AI assistant can
-look up fields, validate draft records, and get mapping suggestions while mapping an internal
-data format onto FIRE.
+An [MCP](https://modelcontextprotocol.io) server for the
+[FIRE data standard](https://github.com/SuadeLabs/fire). It lets your AI assistant look up
+FIRE fields, validate draft records and suggest mappings while you map an internal data format
+onto FIRE.
 
-It works with any MCP client -- Claude, ChatGPT, Cursor, VS Code / GitHub Copilot, Windsurf,
-Gemini CLI, OpenAI Codex and others. It reads FIRE's `schemas/`, `extensions/`,
-`documentation/` and `examples/` from disk at runtime -- no network access. Released packages
-bundle these files from a pinned FIRE release; you can point it at your own
-[`SuadeLabs/fire`](https://github.com/SuadeLabs/fire) checkout instead.
+It works with any MCP client (Claude, ChatGPT, Cursor, VS Code, Windsurf, Gemini CLI, Codex and
+others). It's read-only, needs no sign-in, and makes no network calls: the FIRE schemas, docs
+and examples are bundled from a pinned FIRE release (currently v26.10).
 
-## 1. Choose how to run it
+## Quick start
 
-There are three ways to run the server. Pick one, then follow
-[Connect your client](#2-connect-your-client).
+With [uv](https://docs.astral.sh/uv/) installed, add this server to your client:
 
-| Option | Needs | Best for |
+```json
+{
+  "mcpServers": {
+    "fire": { "command": "uvx", "args": ["suade-fire-mcp"] }
+  }
+}
+```
+
+In Claude Code: `claude mcp add fire -- uvx suade-fire-mcp`
+
+Then ask your assistant *"list the FIRE entities"*. It should return `loan`, `account`,
+`customer`, and so on.
+
+> **Before v0.6.0 is published to PyPI**, `uvx suade-fire-mcp` won't find the package. Until
+> then, clone [FIRE](https://github.com/SuadeLabs/fire) and use
+> `"args": ["--from", "git+https://github.com/SuadeLabs/suade-fire-mcp", "suade-fire-mcp"]`
+> with `"env": { "FIRE_REPO_ROOT": "/absolute/path/to/fire" }`.
+
+**Other clients, Docker, or a remote URL:** see
+[client setup](https://github.com/SuadeLabs/suade-fire-mcp/blob/main/docs/clients.md). Apps
+that only accept a URL (claude.ai, ChatGPT) need a
+[hosted instance](https://github.com/SuadeLabs/suade-fire-mcp/blob/main/docs/hosting.md).
+
+## What you can ask
+
+- *"Which FIRE fields hold interest rate information on a loan?"*
+- *"How does FIRE represent a buy-to-let mortgage? Show me the example."*
+- *"Map these columns onto the FIRE loan schema: cust_id, bal_amt, int_rate, maturity_dt"*
+- *"Why does this record fail validation?"* (paste the record)
+
+For the last two, your client may also offer the `map_source_schema` and
+`explain_validation_failure` prompts, which walk the assistant through the checks step by step.
+
+## Tools
+
+All tools are read-only. Each one documents its parameters and result shape in its schema.
+
+| Tool | What it does |
+| --- | --- |
+| `list_entities` | Every FIRE entity with a short description |
+| `list_fields` | Summary of every field on an entity (type, required, enum or not) |
+| `search_fields` | Search field names, descriptions and enum values across entities |
+| `get_field` | Full detail on one field; optionally the definition of each enum value |
+| `find_examples` | FIRE's worked examples for a product type (e.g. "fx swap"), with the enum values they use |
+| `get_example` | One worked example in full |
+| `suggest_mapping` | Ranked candidate FIRE fields for up to 100 of your own field names |
+| `validate_record` | Check one record against an entity schema, optionally for a jurisdiction |
+| `validate_batch` | Check up to 1000 records, including `*_id` references between them |
+
+**Prompts:** `map_source_schema(entity, source_fields)` builds a reviewed mapping table;
+`explain_validation_failure(entity, record)` explains and fixes a failing record.
+
+**Resources:** `fire://schemas/{entity}`, `fire://extensions/{entity}`,
+`fire://properties/{field}` and `fire://examples/{name}`, with autocomplete.
+
+## Configuration
+
+Released packages need no configuration. These environment variables cover everything else:
+
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| **A. Python (uv)** | [uv](https://docs.astral.sh/uv/) | Most people. One command, nothing to clone: FIRE is bundled, pinned to a release tag. |
-| **B. Docker** | Docker, and for now a SuadeLabs GitHub login (see below) | People who prefer containers, once the image is public. FIRE is built into the image too. |
-| **C. Remote URL** | A hosted instance ([Hosting](#hosting-a-shared-instance)) | Chat apps that only accept a URL (claude.ai, ChatGPT), or sharing one instance with a team. |
-
-### A. Python (uv)
-
-The client starts the server itself. Use this command:
-
-- **command:** `uvx`
-- **args:** `["suade-fire-mcp"]`
-
-`uvx` downloads the package from PyPI on first run and caches it. The package includes the
-FIRE data from the release it was built against, so no FIRE clone or environment variable is
-needed.
-
-> **Use absolute paths if the client can't find `uvx`.** Desktop apps (Claude Desktop,
-> Cursor, VS Code, Windsurf) don't inherit your shell's `PATH`. If you see "command not found"
-> or "spawn ENOENT", use the full path from `which uvx` (e.g. `/home/you/.local/bin/uvx`).
-
-Without uv, `pip install suade-fire-mcp` into a virtualenv and use the absolute path of its
-`fire-mcp` script as the command.
-
-**A different or modified FIRE version.** Clone FIRE (pin a release tag unless you want
-whatever `master` holds) and set `FIRE_REPO_ROOT` in the client's `env` to its absolute path.
-`FIRE_REPO_ROOT` always takes precedence over the bundled copy:
-
-```bash
-git clone --branch v26.10 https://github.com/SuadeLabs/fire.git
-```
-
-### B. Docker
-
-The client starts the container itself and talks to it over stdin/stdout. You don't run it
-yourself; just check that Docker can pull the image:
-
-```bash
-docker pull ghcr.io/suadelabs/suade-fire-mcp:latest
-```
-
-> **The image is currently private.** Until a SuadeLabs org admin makes the package public, an
-> anonymous pull is denied. SuadeLabs members can
-> `docker login ghcr.io` with a GitHub personal access token that has `read:packages`;
-> everyone else should use option A.
-
-To run it, the client uses this command:
-
-```bash
-docker run -i --rm -e FIRE_MCP_TRANSPORT=stdio ghcr.io/suadelabs/suade-fire-mcp:latest
-```
-
-`-i` is required because the client talks to the server over stdin. `FIRE_MCP_TRANSPORT=stdio`
-overrides the image's default, which is the HTTP transport.
-
-### C. Remote URL
-
-If someone already runs a shared instance, all you need is its URL, e.g.
-`https://fire-mcp.example.com/mcp`. Note the `/mcp` path. The server has no sign-in and every
-tool is read-only, so there are no credentials to configure.
-
-To run your own instance, see [Hosting a shared instance](#hosting-a-shared-instance).
-
-## 2. Connect your client
-
-The snippets below use **option A (uv)** for local servers. For **option B (Docker)**,
-replace `command`/`args` with the Docker command, as shown under
-[Claude Desktop](#claude-desktop). For **option C**, use the "Remote" snippet for your client.
-
-Where a client has a project-level config file, it's noted. Commit that file to share the
-setup with your team.
-
-### Claude Desktop
-
-Edit `claude_desktop_config.json`. It's at `~/Library/Application Support/Claude/` on macOS
-and `%APPDATA%\Claude\` on Windows; Settings -> Developer -> Edit Config opens it. Then
-restart the app.
-
-```json
-{
-  "mcpServers": {
-    "fire": {
-      "command": "uvx",
-      "args": ["suade-fire-mcp"]
-    }
-  }
-}
-```
-
-Option B (Docker) looks like this. The same `command` + `args` shape works in every client
-below:
-
-```json
-{
-  "mcpServers": {
-    "fire": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "-e", "FIRE_MCP_TRANSPORT=stdio",
-               "ghcr.io/suadelabs/suade-fire-mcp:latest"]
-    }
-  }
-}
-```
-
-To use your own FIRE checkout with option A, add
-`"env": { "FIRE_REPO_ROOT": "/absolute/path/to/fire" }`.
-
-**Remote:** Settings -> Connectors -> Add custom connector, and enter the URL.
-
-### claude.ai (web and mobile)
-
-Remote only. Go to Settings -> Connectors -> Add custom connector, and enter
-`https://<your-host>/mcp`. On Team and Enterprise plans, an Owner adds the connector once for
-the whole organization.
-
-### Claude Code
-
-```bash
-# Local (uv)
-claude mcp add fire -- uvx suade-fire-mcp
-
-# Local (Docker)
-claude mcp add fire -- docker run -i --rm -e FIRE_MCP_TRANSPORT=stdio ghcr.io/suadelabs/suade-fire-mcp:latest
-
-# Remote
-claude mcp add --transport http fire https://<your-host>/mcp
-```
-
-Add `--scope project` to write the server to a shared `.mcp.json` in the repo instead.
-
-### ChatGPT
-
-Remote only. Turn on developer mode under Settings -> Apps & Connectors -> Advanced. Then
-create a connector with the URL `https://<your-host>/mcp` and **No authentication**. Menu
-names differ between plans; on Business and Enterprise plans an admin may have to enable
-custom connectors first.
-
-### Cursor
-
-Edit `~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project:
-
-```json
-{
-  "mcpServers": {
-    "fire": {
-      "command": "uvx",
-      "args": ["suade-fire-mcp"]
-    }
-  }
-}
-```
-
-**Remote:** `{ "mcpServers": { "fire": { "url": "https://<your-host>/mcp" } } }`
-
-### VS Code (GitHub Copilot agent mode)
-
-Edit `.vscode/mcp.json` in a workspace, or run **MCP: Open User Configuration** from the
-command palette. VS Code uses a top-level `servers` key, not `mcpServers`, and each server
-needs a `type`:
-
-```json
-{
-  "servers": {
-    "fire": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["suade-fire-mcp"]
-    }
-  }
-}
-```
-
-**Remote:** `{ "servers": { "fire": { "type": "http", "url": "https://<your-host>/mcp" } } }`
-
-### Windsurf
-
-Edit `~/.codeium/windsurf/mcp_config.json`. The local snippet is the same as Cursor's.
-
-**Remote:** Windsurf names the URL key `serverUrl`:
-`{ "mcpServers": { "fire": { "serverUrl": "https://<your-host>/mcp" } } }`
-
-### Gemini CLI
-
-Edit `~/.gemini/settings.json`, or `.gemini/settings.json` in a project. The local snippet is
-the same as Cursor's.
-
-**Remote:** Gemini CLI uses `httpUrl` for Streamable HTTP:
-`{ "mcpServers": { "fire": { "httpUrl": "https://<your-host>/mcp" } } }`
-
-### OpenAI Codex (CLI and IDE extension)
-
-Edit `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.fire]
-command = "uvx"
-args = ["suade-fire-mcp"]
-
-# Option B (Docker) instead:
-# command = "docker"
-# args = ["run", "-i", "--rm", "-e", "FIRE_MCP_TRANSPORT=stdio", "ghcr.io/suadelabs/suade-fire-mcp:latest"]
-```
-
-**Remote:** `url = "https://<your-host>/mcp"` in place of `command`/`args`.
-
-### Any other client
-
-Most MCP clients take a server definition in one of these shapes:
-
-- **stdio:** a `command`, its `args`, and an optional `env`. Use the command from option A or B.
-- **Streamable HTTP:** a URL ending in `/mcp`. The key may be called `url`, `serverUrl` or
-  `httpUrl`, and some clients also want `"type": "http"`. This server does **not** offer the
-  older SSE transport.
-
-If a client only supports stdio but you want to use a remote instance, run it through the
-[`mcp-remote`](https://www.npmjs.com/package/mcp-remote) bridge:
-`"command": "npx", "args": ["-y", "mcp-remote", "https://<your-host>/mcp"]`.
-
-### Check that it works
-
-Ask your assistant to *"list the FIRE entities"*. It should call `list_entities` and return
-`loan`, `account`, `customer`, and so on. If the tools don't appear:
-
-- **"spawn ENOENT" / "command not found":** use an absolute path to `uvx` or `docker`
-  (see option A).
-- **`no bundled FIRE data` / `does not look like a FIRE repo`:** you installed from git or a
-  source checkout, which doesn't include FIRE. Install from PyPI (`uvx suade-fire-mcp`), or set
-  `FIRE_REPO_ROOT` in `env` to the absolute path of a FIRE clone (the directory containing
-  `schemas/` and `documentation/`).
-- **The server starts, then exits immediately under Docker:** check that `-i` is in `args`.
-- **`421 Misdirected Request` from a remote URL:** the host's `FIRE_MCP_ALLOWED_HOSTS` doesn't
-  include the hostname you're using (see below). The match is exact and includes any port, so
-  a local test against `http://localhost:8000/mcp` needs `localhost:8000` (or `localhost:*`)
-  in the list, not `localhost`.
-
-To test the server without an assistant, use the
-[MCP Inspector](https://github.com/modelcontextprotocol/inspector):
-`npx @modelcontextprotocol/inspector uvx suade-fire-mcp`.
-
-## Hosting a shared instance
-
-A shared instance serves the Streamable HTTP transport (`FIRE_MCP_TRANSPORT=streamable-http`),
-and this is the image's default. Use one for clients that only accept a URL, or so a team
-doesn't each run their own server.
-
-```bash
-docker run -p 8000:8000 \
-  -e FIRE_MCP_ALLOWED_HOSTS=fire-mcp.example.com \
-  -e FIRE_MCP_ALLOWED_ORIGINS=https://fire-mcp.example.com \
-  ghcr.io/suadelabs/suade-fire-mcp:latest
-```
-
-Put it behind HTTPS (a reverse proxy or your platform's load balancer). Clients connect to
-`https://fire-mcp.example.com/mcp`.
-
-`FIRE_MCP_ALLOWED_HOSTS` and `FIRE_MCP_ALLOWED_ORIGINS` are required. Without them, the MCP
-SDK's DNS-rebinding protection rejects every request from a real hostname with
-`421 Misdirected Request`. Set both to wherever the instance is actually reachable. Each takes
-a comma-separated list, matched exactly against the request's `Host` / `Origin` header, so
-include the port when clients will send one (`localhost:8000`, or `localhost:*` for any port).
-`PORT` defaults to `8000`.
-
-**Build your own image**, optionally pinned to a different FIRE tag:
-
-```bash
-docker build --build-arg FIRE_VERSION=v26.07 -t suade-fire-mcp .
-```
-
-Running your own copy needs nothing from Suade beyond the image (or this repo to build it),
-just as cloning FIRE needs nothing beyond the FIRE repo.
-
-**Operating notes:**
-
-- The HTTP transport is stateless (no MCP sessions), so instances can restart or scale out
-  without breaking anyone's conversation. `GET /health` returns `{"status": "ok"}` for load
-  balancer checks, and the image's Docker `HEALTHCHECK` uses it.
-- The image runs as an unprivileged user (`fire`, uid 10001).
-- Don't rate-limit per IP. Hosted assistants send requests from shared egress ranges, so many
-  users share one address. For example, claude.ai connects from Anthropic's `160.79.104.0/21`.
-  Don't block that range at a firewall or WAF either.
-- Tool arguments, including draft records passed to `validate_record` / `validate_batch`, are
-  never stored and are only logged at DEBUG level. Don't run a public instance with debug
-  logging on.
-- Tool results are sized to fit hosted assistants' result limits; for example, claude.ai
-  allows ~150k characters and Claude Code 25k tokens by default. `list_fields` returns
-  per-field summaries; `get_field` returns one field's enum values and docs. `search_fields`
-  is capped at 50 results and `suggest_mapping` at 100 source fields per call.
-  `validate_batch` takes up to 1000 records per call and returns at most 250 issues, with
-  a `truncated` flag and the full `issue_count`. Values echoed back in issues are shortened.
-- The HTTP transport accepts request bodies up to 16 MiB, enough for a full 1000-record
-  `validate_batch` call. A reverse proxy in front of it needs at least the same limit.
-
-## Development
-
-```bash
-pip install -e ".[dev]"   # includes the pinned ruff and black versions CI uses
-export FIRE_REPO_ROOT=/absolute/path/to/fire
-pytest
-ruff check . && black --check .
-```
-
-A source checkout has no bundled FIRE data, so `FIRE_REPO_ROOT` is required. To build a release
-wheel locally, vendor the pinned FIRE release first:
-
-```bash
-python scripts/vendor_fire.py /absolute/path/to/fire --version v26.10
-python -m build
-```
-
-## What it exposes
-
-Resources:
-- `fire://schemas/{entity}` -- an entity's schema, with all `$ref`s resolved inline
-- `fire://properties/{field}` -- the markdown documentation for one field
-- `fire://examples/{name}` -- a worked example payload
-- `fire://extensions/{entity}` -- an entity's jurisdiction-specific extension fields, if any
-
-Clients that support completions can autocomplete each resource's `{entity}`, `{field}` or
-`{name}` part. Tool parameters list their valid values (entity names, jurisdictions) in their
-input schema.
-
-Tools (all read-only). Each returns a JSON object and declares its shape as an output schema:
-- `list_entities` -- every FIRE entity with a short description
-- `list_fields(entity)` -- summary of every field on an entity, flagged required / enum
-- `search_fields(query, limit=10)` -- fuzzy search over field names, descriptions and enum
-  values (max 50 results). One result per field, with the list of entities it appears on;
-  a field whose enum differs by entity appears once per variant
-- `get_field(entity, field, include_enum_definitions=False)` -- full detail on one field,
-  including enum values and a doc excerpt; with `include_enum_definitions`, also the prose
-  definition of each enum value
-- `get_example(name)` -- one worked example payload in full
-- `find_examples(query, entity=None, limit=5)` -- find worked examples for a product or trade
-  type ("buy to let mortgage", "fx swap"), with the classification (enum) values each uses
-- `validate_record(entity, record, jurisdiction=None, strict=False)` -- validate a JSON record
-  against a FIRE schema, including RFC 3339 form for `date-time` fields; returns
-  `{"valid": bool, "issues": [...]}`. `jurisdiction` (e.g. `US`) adds that jurisdiction's
-  extension fields; an unknown value is an error
-- `validate_batch(records, jurisdiction=None, strict=False)` -- validate up to 1000
-  `{"entity", "record"}` pairs, plus cross-record `*_id` reference checks; returns
-  `{"valid", "record_count", "issue_count", "truncated", "records", "referential_issues"}`,
-  where `records` lists only the records with issues
-- `suggest_mapping(entity, source_fields, sample_values=None)` -- ranked, non-authoritative
-  mapping candidates for up to 100 of your own field names, in any naming style
-  (`CustomerID`, `customer-id`, `cust_id`); returns
-  `{"candidates": [...], "basis": "..."}`, where `basis` explains what the scores mean and each
-  candidate's `example_evidence` says how many worked examples populate that field. Scores
-  include a small boost (up to 8 points, reported as `example_boost`) for fields the worked
-  examples use
-
-Prompts (workflows you start from your client's prompt or slash-command menu):
-- `map_source_schema(entity, source_fields)` -- paste your field names or a header row; the
-  assistant builds a mapping table, checks each suggestion against the FIRE definitions and
-  lists unmapped required fields
-- `explain_validation_failure(entity, record)` -- paste a failing record; the assistant
-  explains each issue, fixes it and re-validates
-
-## Disclaimer
+| `FIRE_REPO_ROOT` | bundled data | Path to a FIRE checkout to use instead of the bundled release, e.g. a newer or modified FIRE. Required when running from source. |
+| `FIRE_MCP_TRANSPORT` | `stdio` (`streamable-http` in the Docker image) | `stdio` for clients that launch the server, `streamable-http` for a hosted instance. |
+| `PORT` | `8000` | HTTP port (`streamable-http` only). |
+| `FIRE_MCP_ALLOWED_HOSTS` | none, required | Comma-separated `Host` values the hosted instance answers to (`streamable-http` only). |
+| `FIRE_MCP_ALLOWED_ORIGINS` | none, required | Comma-separated allowed `Origin` values (`streamable-http` only). |
+
+## Troubleshooting
+
+- **"spawn ENOENT" / "command not found":** desktop apps don't inherit your shell's `PATH`. Use
+  the absolute path from `which uvx`.
+- **"no bundled FIRE data":** you installed from git or a source checkout. Install from PyPI, or
+  set `FIRE_REPO_ROOT` to a FIRE clone.
+- **Tools don't appear:** test the server on its own with the
+  [MCP Inspector](https://github.com/modelcontextprotocol/inspector):
+  `npx @modelcontextprotocol/inspector uvx suade-fire-mcp`.
+
+Docker and hosted-instance problems are covered in
+[client setup](https://github.com/SuadeLabs/suade-fire-mcp/blob/main/docs/clients.md#troubleshooting)
+and [hosting](https://github.com/SuadeLabs/suade-fire-mcp/blob/main/docs/hosting.md).
+
+## Limitations and disclaimer
 
 This is an open-source, AI-assisted tool, provided as-is under the Apache 2.0 license, with no
-warranty, SLA or support commitment. Use it at your own risk.
+warranty, SLA or support commitment.
 
-- **Schemas, field definitions, examples and validation** come straight from the published
-  [FIRE standard](https://github.com/SuadeLabs/fire) at the pinned release. They are only as
-  current as that release. Some of FIRE v26.10's own worked examples carry dates without a
-  UTC offset (`2019-04-30T00:00:00`), which the validation tools correctly report as
-  `format_mismatch`; [SuadeLabs/fire#710](https://github.com/SuadeLabs/fire/pull/710) fixes
-  them upstream.
-- **Mapping suggestions are not advice.** `suggest_mapping` ranks candidates by how similar
-  field names look, not by what the fields mean. The AI assistant using this server can also
-  misread or misapply any result. Check every mapping against the FIRE field definitions before
-  relying on it, and don't treat anything this server or an assistant says as a Suade
-  recommendation for regulatory reporting.
-- **Nothing you send is stored.** Tool arguments, including records passed to the validation
-  tools, are not persisted, and are not logged outside DEBUG level.
+- **Schemas, definitions, examples and validation** come straight from the pinned
+  [FIRE release](https://github.com/SuadeLabs/fire), and are only as current as it is. Some of
+  FIRE v26.10's own examples use dates without a UTC offset, which validation correctly reports
+  as `format_mismatch` ([fixed upstream](https://github.com/SuadeLabs/fire/pull/710)).
+- **Mapping suggestions are not advice.** `suggest_mapping` ranks candidates by how similar the
+  names look, not by what the fields mean, and the assistant can misread any result. Check every
+  mapping against the FIRE definitions. Nothing here is a Suade recommendation for regulatory
+  reporting.
+- **Nothing you send is stored.** Tool arguments, including records you validate, are not
+  persisted and are only logged at DEBUG level.
+
+## Contributing
+
+See [CONTRIBUTING.md](https://github.com/SuadeLabs/suade-fire-mcp/blob/main/CONTRIBUTING.md).
 
 ## License
 
-Apache 2.0 -- see [LICENSE](LICENSE), matching FIRE's own license.
+Apache 2.0, matching FIRE's own license. See
+[LICENSE](https://github.com/SuadeLabs/suade-fire-mcp/blob/main/LICENSE).
