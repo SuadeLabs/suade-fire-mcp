@@ -25,7 +25,9 @@ def test_split_env_list_requires_the_var(monkeypatch):
 def test_main_defaults_to_stdio(monkeypatch):
     monkeypatch.delenv("FIRE_MCP_TRANSPORT", raising=False)
     calls = []
-    monkeypatch.setattr(server.mcp, "run", lambda *a, **kw: calls.append((a, kw)))
+    monkeypatch.setattr(
+        server.MCPServer, "run", lambda *a, **kw: calls.append((a[1:], kw))
+    )
     server.main()
     assert calls == [((), {})]
 
@@ -51,7 +53,7 @@ def test_main_streamable_http_passes_security_settings(monkeypatch):
     monkeypatch.setenv("FIRE_MCP_ALLOWED_ORIGINS", "https://example.com")
 
     calls = []
-    monkeypatch.setattr(server.mcp, "run", lambda *a, **kw: calls.append(kw))
+    monkeypatch.setattr(server.MCPServer, "run", lambda *a, **kw: calls.append(kw))
     server.main()
 
     assert len(calls) == 1
@@ -69,7 +71,7 @@ def test_health_route_bypasses_host_checks():
     # Load balancer health checks hit the instance directly, not via the public hostname.
     from starlette.testclient import TestClient
 
-    app = server.mcp.streamable_http_app(
+    app = server.create_server().streamable_http_app(
         transport_security=server.TransportSecuritySettings(
             allowed_hosts=["fire-mcp.example.com"],
             allowed_origins=["https://fire-mcp.example.com"],
@@ -103,7 +105,7 @@ def test_main_exits_with_one_line_when_fire_is_missing(
         monkeypatch.setattr(server.repo, "_looks_like_fire_repo", lambda path: False)
     else:
         monkeypatch.setenv("FIRE_REPO_ROOT", value)
-    monkeypatch.setattr(server.mcp, "run", lambda *a, **kw: pytest.fail("ran"))
+    monkeypatch.setattr(server.MCPServer, "run", lambda *a, **kw: pytest.fail("ran"))
     with pytest.raises(SystemExit, match=message) as info:
         server.main()
     assert str(info.value).startswith("fire-mcp: ")

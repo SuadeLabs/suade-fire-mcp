@@ -326,6 +326,10 @@ Resources:
 - `fire://examples/{name}` -- a worked example payload
 - `fire://extensions/{entity}` -- an entity's jurisdiction-specific extension fields, if any
 
+Clients that support completions can autocomplete each resource's `{entity}`, `{field}` or
+`{name}` part. Tool parameters list their valid values (entity names, jurisdictions) in their
+input schema.
+
 Tools (all read-only):
 - `list_entities` -- every FIRE entity with a short description
 - `list_fields(entity)` -- summary of every field on an entity, flagged required / enum

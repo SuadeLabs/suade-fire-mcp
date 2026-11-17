@@ -8,21 +8,77 @@ from mcp.server.mcpserver.exceptions import (
     UnexpectedToolError,
 )
 
-from fire_mcp import refs, server, tools
+from fire_mcp import catalog, refs, server, tools
+from fire_mcp.validation import known_jurisdictions
+
+MCP = server.create_server()
 
 
 def _call(name, args):
-    return anyio.run(server.mcp.call_tool, name, args)
+    return anyio.run(MCP.call_tool, name, args)
+
+
+def _properties():
+    for tool in anyio.run(MCP.list_tools):
+        for param, schema in tool.input_schema.get("properties", {}).items():
+            yield tool.name, param, schema
 
 
 def test_every_tool_has_a_title_and_read_only_annotations():
-    listed = anyio.run(server.mcp.list_tools)
+    listed = anyio.run(MCP.list_tools)
     assert len(listed) == 10
     for tool in listed:
         assert tool.title, tool.name
         assert len(tool.name) <= 64
         assert tool.annotations.read_only_hint is True, tool.name
         assert tool.annotations.destructive_hint is False, tool.name
+
+
+def test_every_parameter_has_a_description():
+    # Some clients show the model only the per-parameter schema, not the
+    # tool's docstring, so each parameter has to explain itself.
+    for tool, param, schema in _properties():
+        assert schema.get("description"), f"{tool}.{param}"
+
+
+def _enum(schema):
+    if "enum" in schema:
+        return schema["enum"]
+    for option in schema.get("anyOf", []):
+        if "enum" in option:
+            return option["enum"]
+    return None
+
+
+def test_entity_and_jurisdiction_parameters_list_their_valid_values():
+    seen = set()
+    for tool, param, schema in _properties():
+        if param == "entity":
+            assert _enum(schema) == catalog.known_entity_names(), tool
+            seen.add(param)
+        elif param == "jurisdiction":
+            assert _enum(schema) == list(known_jurisdictions()), tool
+            seen.add(param)
+    assert seen == {"entity", "jurisdiction"}
+
+
+def test_wrong_entity_still_gets_the_package_message_not_a_schema_error():
+    # The enum is advertised, not enforced by the SDK, so the model is told
+    # which tool lists the valid names.
+    with pytest.raises(ToolError, match="Use list_entities"):
+        _call("get_field", {"entity": "loans", "field": "balance"})
+
+
+def test_jurisdiction_stays_case_insensitive():
+    result = _call(
+        "validate_record",
+        {
+            "entity": "loan",
+            "record": {"id": "L1", "date": "2026-01-01T00:00:00Z"},
+            "jurisdiction": "us",
+        },
+    )
+    assert result.structured_content["valid"] is True
 
 
 def test_anticipated_errors_reach_the_model_with_their_message():
@@ -33,7 +89,7 @@ def test_anticipated_errors_reach_the_model_with_their_message():
 
 def test_anticipated_resource_errors_keep_their_message():
     with pytest.raises(ResourceError, match="Use list_entities"):
-        anyio.run(server.mcp.read_resource, "fire://schemas/not_an_entity")
+        anyio.run(MCP.read_resource, "fire://schemas/not_an_entity")
 
 
 def test_search_fields_rejects_limit_over_cap():
