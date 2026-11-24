@@ -28,11 +28,6 @@ In Claude Code: `claude mcp add fire -- uvx suade-fire-mcp`
 Then ask your assistant *"list the FIRE entities"*. It should return `loan`, `account`,
 `customer`, and so on.
 
-> **Before v0.6.0 is published to PyPI**, `uvx suade-fire-mcp` won't find the package. Until
-> then, clone [FIRE](https://github.com/SuadeLabs/fire) and use
-> `"args": ["--from", "git+https://github.com/SuadeLabs/suade-fire-mcp", "suade-fire-mcp"]`
-> with `"env": { "FIRE_REPO_ROOT": "/absolute/path/to/fire" }`.
-
 **Other clients, Docker, or a remote URL:** see
 [client setup](https://github.com/SuadeLabs/suade-fire-mcp/blob/main/docs/clients.md). Apps
 that only accept a URL (claude.ai, ChatGPT) need a
