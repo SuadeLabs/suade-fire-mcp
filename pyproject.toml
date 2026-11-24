@@ -38,7 +38,7 @@ dev = [
     "pytest>=7.0.0",
     "mcp[cli]==2.3.0",
     # Pinned so local runs and CI lint identically.
-    "ruff==0.17.4",
+    "ruff==0.17.5",
     "black==26.10.1",
     "build>=1.2",
 ]
