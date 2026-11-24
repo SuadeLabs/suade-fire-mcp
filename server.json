@@ -1,18 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.suadelabs/suade-fire-mcp",
+  "name": "io.github.SuadeLabs/suade-fire-mcp",
   "title": "FIRE data standard",
   "description": "Look up, validate and map data to the FIRE financial regulatory data standard.",
   "repository": {
     "url": "https://github.com/SuadeLabs/suade-fire-mcp",
     "source": "github"
   },
-  "version": "0.6.0",
+  "version": "0.6.1",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "suade-fire-mcp",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "transport": {
         "type": "stdio"
       }

@@ -1,6 +1,6 @@
 # suade-fire-mcp
 
-<!-- mcp-name: io.github.suadelabs/suade-fire-mcp -->
+<!-- mcp-name: io.github.SuadeLabs/suade-fire-mcp -->
 
 An [MCP](https://modelcontextprotocol.io) server for the
 [FIRE data standard](https://github.com/SuadeLabs/fire). It lets your AI assistant look up
